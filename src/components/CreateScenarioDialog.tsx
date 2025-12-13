@@ -74,7 +74,10 @@ export function CreateScenarioDialog({ open, onOpenChange }: CreateScenarioDialo
         tags: [],
         last_run_at: null,
         run_count: 0,
-        success_rate: 0
+        success_rate: 0,
+        avg_duration_ms: null,
+        is_valid: true,
+        validation_errors: [],
       });
 
       toast({

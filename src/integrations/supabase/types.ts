@@ -97,12 +97,50 @@ export type Database = {
         }
         Relationships: []
       }
+      runner_health: {
+        Row: {
+          active_sessions: number | null
+          id: string
+          last_heartbeat: string
+          metadata: Json | null
+          runner_id: string
+          started_at: string
+          total_failures: number | null
+          total_sessions_executed: number | null
+          uptime_seconds: number | null
+        }
+        Insert: {
+          active_sessions?: number | null
+          id?: string
+          last_heartbeat?: string
+          metadata?: Json | null
+          runner_id: string
+          started_at?: string
+          total_failures?: number | null
+          total_sessions_executed?: number | null
+          uptime_seconds?: number | null
+        }
+        Update: {
+          active_sessions?: number | null
+          id?: string
+          last_heartbeat?: string
+          metadata?: Json | null
+          runner_id?: string
+          started_at?: string
+          total_failures?: number | null
+          total_sessions_executed?: number | null
+          uptime_seconds?: number | null
+        }
+        Relationships: []
+      }
       scenarios: {
         Row: {
+          avg_duration_ms: number | null
           created_at: string
           description: string | null
           estimated_duration_seconds: number | null
           id: string
+          is_valid: boolean | null
           last_run_at: string | null
           name: string
           run_count: number | null
@@ -110,12 +148,15 @@ export type Database = {
           success_rate: number | null
           tags: string[] | null
           updated_at: string
+          validation_errors: Json | null
         }
         Insert: {
+          avg_duration_ms?: number | null
           created_at?: string
           description?: string | null
           estimated_duration_seconds?: number | null
           id?: string
+          is_valid?: boolean | null
           last_run_at?: string | null
           name: string
           run_count?: number | null
@@ -123,12 +164,15 @@ export type Database = {
           success_rate?: number | null
           tags?: string[] | null
           updated_at?: string
+          validation_errors?: Json | null
         }
         Update: {
+          avg_duration_ms?: number | null
           created_at?: string
           description?: string | null
           estimated_duration_seconds?: number | null
           id?: string
+          is_valid?: boolean | null
           last_run_at?: string | null
           name?: string
           run_count?: number | null
@@ -136,6 +180,7 @@ export type Database = {
           success_rate?: number | null
           tags?: string[] | null
           updated_at?: string
+          validation_errors?: Json | null
         }
         Relationships: []
       }
@@ -179,6 +224,7 @@ export type Database = {
         Row: {
           action: string | null
           details: Json | null
+          duration_ms: number | null
           id: string
           level: Database["public"]["Enums"]["log_level"]
           message: string
@@ -189,6 +235,7 @@ export type Database = {
         Insert: {
           action?: string | null
           details?: Json | null
+          duration_ms?: number | null
           id?: string
           level?: Database["public"]["Enums"]["log_level"]
           message: string
@@ -199,6 +246,7 @@ export type Database = {
         Update: {
           action?: string | null
           details?: Json | null
+          duration_ms?: number | null
           id?: string
           level?: Database["public"]["Enums"]["log_level"]
           message?: string
@@ -224,9 +272,14 @@ export type Database = {
           error_message: string | null
           execution_time_ms: number | null
           id: string
+          is_resumable: boolean | null
+          last_successful_step: number | null
+          max_retries: number | null
           metadata: Json | null
           profile_id: string | null
           progress: number | null
+          resume_metadata: Json | null
+          retry_count: number | null
           runner_id: string | null
           scenario_id: string | null
           started_at: string | null
@@ -241,9 +294,14 @@ export type Database = {
           error_message?: string | null
           execution_time_ms?: number | null
           id?: string
+          is_resumable?: boolean | null
+          last_successful_step?: number | null
+          max_retries?: number | null
           metadata?: Json | null
           profile_id?: string | null
           progress?: number | null
+          resume_metadata?: Json | null
+          retry_count?: number | null
           runner_id?: string | null
           scenario_id?: string | null
           started_at?: string | null
@@ -258,9 +316,14 @@ export type Database = {
           error_message?: string | null
           execution_time_ms?: number | null
           id?: string
+          is_resumable?: boolean | null
+          last_successful_step?: number | null
+          max_retries?: number | null
           metadata?: Json | null
           profile_id?: string | null
           progress?: number | null
+          resume_metadata?: Json | null
+          retry_count?: number | null
           runner_id?: string | null
           scenario_id?: string | null
           started_at?: string | null
@@ -290,7 +353,7 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      increment_profile_sessions: { Args: { p_id: string }; Returns: undefined }
     }
     Enums: {
       log_level: "debug" | "info" | "warning" | "error" | "success"
