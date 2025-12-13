@@ -20,6 +20,17 @@ export interface SessionWithRelations extends Session {
   scenarios?: { id: string; name: string; steps: unknown } | null;
 }
 
+export interface RunnerHealth {
+  id: string;
+  runner_id: string;
+  last_heartbeat: string;
+  active_sessions: number;
+  total_sessions_executed: number;
+  total_failures: number;
+  uptime_seconds: number;
+  started_at: string;
+  metadata: unknown;
+}
 
 // Fetch dashboard stats
 export async function fetchStats(): Promise<DashboardStats> {
@@ -110,6 +121,20 @@ export async function fetchSessionLogs(sessionId: string): Promise<SessionLog[]>
   return data || [];
 }
 
+// Fetch runner health data
+export async function fetchRunnerHealth(): Promise<RunnerHealth[]> {
+  const { data, error } = await supabase
+    .from('runner_health')
+    .select('*')
+    .order('last_heartbeat', { ascending: false });
+
+  if (error) {
+    console.error('Error fetching runner health:', error);
+    return [];
+  }
+  return data || [];
+}
+
 // Create a new profile
 export async function createProfile(profile: Omit<Profile, 'id' | 'created_at' | 'updated_at'>): Promise<Profile | null> {
   const { data, error } = await supabase
@@ -136,6 +161,23 @@ export async function createScenario(scenario: Omit<Scenario, 'id' | 'created_at
   if (error) {
     console.error('Error creating scenario:', error);
     return null;
+  }
+  return data;
+}
+
+// Validate a scenario (dry-run)
+export async function validateScenario(scenarioId: string) {
+  const { data, error } = await supabase.functions.invoke('session-api', {
+    method: 'POST',
+    body: {
+      _path: `/scenarios/${scenarioId}/validate`,
+      _method: 'POST',
+    }
+  });
+
+  if (error) {
+    console.error('Error validating scenario:', error);
+    throw error;
   }
   return data;
 }
@@ -182,6 +224,18 @@ export function subscribeToLogs(sessionId: string, callback: (payload: any) => v
         table: 'session_logs',
         filter: `session_id=eq.${sessionId}`
       },
+      callback
+    )
+    .subscribe();
+}
+
+// Subscribe to runner health updates
+export function subscribeToRunnerHealth(callback: (payload: any) => void) {
+  return supabase
+    .channel('runner-health-changes')
+    .on(
+      'postgres_changes',
+      { event: '*', schema: 'public', table: 'runner_health' },
       callback
     )
     .subscribe();

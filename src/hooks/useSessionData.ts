@@ -7,12 +7,15 @@ import {
   fetchScenarios,
   fetchSessions,
   fetchSessionLogs,
+  fetchRunnerHealth,
   createProfile,
   createScenario,
   subscribeToSessions,
   subscribeToLogs,
+  subscribeToRunnerHealth,
   DashboardStats,
-  SessionWithRelations
+  SessionWithRelations,
+  RunnerHealth
 } from '@/lib/api';
 import { Database } from '@/integrations/supabase/types';
 
@@ -94,6 +97,28 @@ export function useSessionLogs(sessionId: string | null) {
   }, [sessionId]);
 
   return { ...query, data: logs };
+}
+
+export function useRunnerHealth() {
+  const queryClient = useQueryClient();
+  
+  const query = useQuery<RunnerHealth[]>({
+    queryKey: ['runner-health'],
+    queryFn: fetchRunnerHealth,
+    refetchInterval: 30000
+  });
+
+  useEffect(() => {
+    const channel = subscribeToRunnerHealth(() => {
+      queryClient.invalidateQueries({ queryKey: ['runner-health'] });
+    });
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [queryClient]);
+
+  return query;
 }
 
 export function useCreateProfile() {

@@ -8,7 +8,10 @@ import { ProfileList } from '@/components/ProfileList';
 import { ExecutionPanel } from '@/components/ExecutionPanel';
 import { CreateProfileDialog } from '@/components/CreateProfileDialog';
 import { CreateScenarioDialog } from '@/components/CreateScenarioDialog';
-import { useStats, useProfiles, useScenarios, useSessions, useSessionLogs } from '@/hooks/useSessionData';
+import { SessionTimeline } from '@/components/SessionTimeline';
+import { MetricsDashboard } from '@/components/MetricsDashboard';
+import { DataExport } from '@/components/DataExport';
+import { useStats, useProfiles, useScenarios, useSessions, useSessionLogs, useRunnerHealth } from '@/hooks/useSessionData';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Button } from '@/components/ui/button';
@@ -22,7 +25,9 @@ import {
   Layers,
   Terminal,
   Plus,
-  Loader2
+  Loader2,
+  BarChart3,
+  AlignLeft
 } from 'lucide-react';
 import { Database } from '@/integrations/supabase/types';
 
@@ -33,11 +38,13 @@ const Index = () => {
   const { data: profiles = [], isLoading: profilesLoading } = useProfiles();
   const { data: scenarios = [], isLoading: scenariosLoading } = useScenarios();
   const { data: sessions = [], isLoading: sessionsLoading } = useSessions();
+  const { data: runners = [] } = useRunnerHealth();
 
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
   const [selectedScenario, setSelectedScenario] = useState<Scenario | null>(null);
   const [profileDialogOpen, setProfileDialogOpen] = useState(false);
   const [scenarioDialogOpen, setScenarioDialogOpen] = useState(false);
+  const [rightPanelView, setRightPanelView] = useState<'logs' | 'timeline' | 'metrics'>('logs');
 
   const { data: logs = [] } = useSessionLogs(selectedSessionId);
 
@@ -270,24 +277,79 @@ const Index = () => {
                 ))}
               </Tabs>
             )}
+
+            {/* Data Export */}
+            <DataExport />
           </div>
 
-          {/* Right Panel - Logs */}
+          {/* Right Panel - Logs/Timeline/Metrics */}
           <div className="lg:col-span-4 space-y-4">
-            <div className="flex items-center gap-2 text-sm font-medium mb-2">
-              <Terminal className="w-4 h-4 text-primary" />
-              Session Output
-              {selectedSession && (
-                <span className="text-xs text-muted-foreground ml-auto font-mono">
-                  {selectedSession.id.slice(0, 8)}
-                </span>
-              )}
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center gap-2 text-sm font-medium">
+                {rightPanelView === 'logs' && <Terminal className="w-4 h-4 text-primary" />}
+                {rightPanelView === 'timeline' && <AlignLeft className="w-4 h-4 text-primary" />}
+                {rightPanelView === 'metrics' && <BarChart3 className="w-4 h-4 text-primary" />}
+                {rightPanelView === 'logs' && 'Session Output'}
+                {rightPanelView === 'timeline' && 'Execution Timeline'}
+                {rightPanelView === 'metrics' && 'Metrics'}
+              </div>
+              <div className="flex gap-1">
+                <Button
+                  size="sm"
+                  variant={rightPanelView === 'logs' ? 'default' : 'ghost'}
+                  onClick={() => setRightPanelView('logs')}
+                  className="h-7 px-2"
+                >
+                  <Terminal className="w-3.5 h-3.5" />
+                </Button>
+                <Button
+                  size="sm"
+                  variant={rightPanelView === 'timeline' ? 'default' : 'ghost'}
+                  onClick={() => setRightPanelView('timeline')}
+                  className="h-7 px-2"
+                >
+                  <Clock className="w-3.5 h-3.5" />
+                </Button>
+                <Button
+                  size="sm"
+                  variant={rightPanelView === 'metrics' ? 'default' : 'ghost'}
+                  onClick={() => setRightPanelView('metrics')}
+                  className="h-7 px-2"
+                >
+                  <BarChart3 className="w-3.5 h-3.5" />
+                </Button>
+              </div>
             </div>
             
-            <LogViewer 
-              logs={formattedLogs} 
-              maxHeight="480px"
-            />
+            {rightPanelView === 'logs' && (
+              <>
+                {selectedSession && (
+                  <span className="text-xs text-muted-foreground font-mono">
+                    Session: {selectedSession.id.slice(0, 8)}
+                  </span>
+                )}
+                <LogViewer 
+                  logs={formattedLogs} 
+                  maxHeight="480px"
+                />
+              </>
+            )}
+
+            {rightPanelView === 'timeline' && (
+              <SessionTimeline
+                logs={logs}
+                totalSteps={selectedSession?.total_steps || 0}
+                currentStep={selectedSession?.current_step || 0}
+              />
+            )}
+
+            {rightPanelView === 'metrics' && (
+              <MetricsDashboard
+                sessions={sessions}
+                scenarios={scenarios}
+                runners={runners}
+              />
+            )}
           </div>
         </div>
       </main>
