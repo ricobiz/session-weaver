@@ -2,22 +2,35 @@ import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Slider } from '@/components/ui/slider';
-import { Play, Pause, Square, Settings2 } from 'lucide-react';
-import { Scenario, UserProfile } from '@/types/session';
+import { Play, Pause, Square, Settings2, Loader2 } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
+import { supabase } from '@/integrations/supabase/client';
+import { useQueryClient } from '@tanstack/react-query';
+
+interface ScenarioOption {
+  id: string;
+  name: string;
+}
+
+interface ProfileOption {
+  id: string;
+  name: string;
+}
 
 interface ExecutionPanelProps {
-  scenarios: Scenario[];
-  profiles: UserProfile[];
+  scenarios: ScenarioOption[];
+  profiles: ProfileOption[];
 }
 
 export function ExecutionPanel({ scenarios, profiles }: ExecutionPanelProps) {
   const [selectedScenario, setSelectedScenario] = useState<string>('');
-  const [selectedProfiles, setSelectedProfiles] = useState<string[]>([]);
+  const [selectedProfile, setSelectedProfile] = useState<string>('all');
   const [concurrency, setConcurrency] = useState([3]);
-  const [isRunning, setIsRunning] = useState(false);
+  const [isStarting, setIsStarting] = useState(false);
 
-  const handleStart = () => {
+  const queryClient = useQueryClient();
+
+  const handleStart = async () => {
     if (!selectedScenario) {
       toast({
         title: 'Select a scenario',
@@ -26,19 +39,50 @@ export function ExecutionPanel({ scenarios, profiles }: ExecutionPanelProps) {
       });
       return;
     }
-    setIsRunning(true);
-    toast({
-      title: 'Sessions started',
-      description: `Launching ${selectedProfiles.length || profiles.length} parallel sessions.`,
-    });
-  };
 
-  const handleStop = () => {
-    setIsRunning(false);
-    toast({
-      title: 'Sessions stopped',
-      description: 'All active sessions have been terminated.',
-    });
+    if (profiles.length === 0) {
+      toast({
+        title: 'No profiles',
+        description: 'Create at least one profile first.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    setIsStarting(true);
+
+    try {
+      const profileIds = selectedProfile === 'all' 
+        ? profiles.map(p => p.id)
+        : [selectedProfile];
+
+      const { data, error } = await supabase.functions.invoke('session-api', {
+        body: {
+          scenario_id: selectedScenario,
+          profile_ids: profileIds,
+          priority: 0
+        }
+      });
+
+      if (error) throw error;
+
+      toast({
+        title: 'Sessions queued',
+        description: `${data.created} session(s) added to execution queue.`,
+      });
+
+      queryClient.invalidateQueries({ queryKey: ['sessions'] });
+      queryClient.invalidateQueries({ queryKey: ['stats'] });
+    } catch (error) {
+      console.error('Error starting sessions:', error);
+      toast({
+        title: 'Error',
+        description: 'Failed to start sessions. Check console for details.',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsStarting(false);
+    }
   };
 
   return (
@@ -58,11 +102,15 @@ export function ExecutionPanel({ scenarios, profiles }: ExecutionPanelProps) {
               <SelectValue placeholder="Select scenario..." />
             </SelectTrigger>
             <SelectContent>
-              {scenarios.map((s) => (
-                <SelectItem key={s.id} value={s.id}>
-                  {s.name}
-                </SelectItem>
-              ))}
+              {scenarios.length === 0 ? (
+                <SelectItem value="_none" disabled>No scenarios available</SelectItem>
+              ) : (
+                scenarios.map((s) => (
+                  <SelectItem key={s.id} value={s.id}>
+                    {s.name}
+                  </SelectItem>
+                ))
+              )}
             </SelectContent>
           </Select>
         </div>
@@ -71,7 +119,7 @@ export function ExecutionPanel({ scenarios, profiles }: ExecutionPanelProps) {
           <label className="text-xs text-muted-foreground uppercase tracking-wide">
             Profile Selection
           </label>
-          <Select>
+          <Select value={selectedProfile} onValueChange={setSelectedProfile}>
             <SelectTrigger className="bg-muted/50 border-border">
               <SelectValue placeholder="All profiles" />
             </SelectTrigger>
@@ -105,24 +153,23 @@ export function ExecutionPanel({ scenarios, profiles }: ExecutionPanelProps) {
       </div>
 
       <div className="flex gap-2 pt-2">
-        {!isRunning ? (
-          <Button onClick={handleStart} className="flex-1 gap-2">
+        <Button 
+          onClick={handleStart} 
+          className="flex-1 gap-2"
+          disabled={isStarting || scenarios.length === 0 || profiles.length === 0}
+        >
+          {isStarting ? (
+            <Loader2 className="w-4 h-4 animate-spin" />
+          ) : (
             <Play className="w-4 h-4" />
-            Start Sessions
-          </Button>
-        ) : (
-          <>
-            <Button variant="secondary" className="flex-1 gap-2">
-              <Pause className="w-4 h-4" />
-              Pause
-            </Button>
-            <Button variant="destructive" onClick={handleStop} className="gap-2">
-              <Square className="w-4 h-4" />
-              Stop
-            </Button>
-          </>
-        )}
+          )}
+          Queue Sessions
+        </Button>
       </div>
+
+      <p className="text-xs text-muted-foreground text-center">
+        Sessions will be picked up by your Playwright runner
+      </p>
     </div>
   );
 }
