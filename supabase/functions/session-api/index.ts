@@ -479,6 +479,211 @@ serve(async (req) => {
       });
     }
 
+    // ============================================
+    // AI ENDPOINTS (Mocked for now - OpenRouter ready)
+    // ============================================
+
+    // POST /ai/scenario/analyze - Analyze scenario quality
+    if (req.method === 'POST' && path === '/ai/scenario/analyze') {
+      const { scenario_id } = await req.json();
+      
+      // Mock response - will be replaced with OpenRouter call
+      const mockAnalysis = {
+        scenario_id,
+        quality_score: 0.85,
+        estimated_success_rate: 0.78,
+        risk_level: 'medium',
+        risk_factors: [
+          { factor: 'Dynamic content loading', severity: 'medium', step_indices: [0, 2] },
+          { factor: 'Element visibility timing', severity: 'low', step_indices: [3] },
+        ],
+        duration_analysis: {
+          estimated_seconds: 120,
+          confidence: 0.82,
+          breakdown: 'Navigation (10s) + Interaction (80s) + Verification (30s)',
+        },
+        suggestions: [
+          { type: 'optimization', message: 'Consider adding explicit waits after navigation' },
+          { type: 'reliability', message: 'Use more specific selectors for click actions' },
+        ],
+        ai_powered: false, // Will be true when OpenRouter is connected
+      };
+
+      return new Response(JSON.stringify(mockAnalysis), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    // POST /ai/scenario/suggest - Generate scenario improvements
+    if (req.method === 'POST' && path === '/ai/scenario/suggest') {
+      const { scenario_id, context } = await req.json();
+      
+      // Mock response - will be replaced with OpenRouter call
+      const mockSuggestions = {
+        scenario_id,
+        suggestions: [
+          {
+            type: 'add_step',
+            position: 1,
+            step: { action: 'wait', duration: 2 },
+            reason: 'Add buffer after page load for dynamic content',
+          },
+          {
+            type: 'modify_step',
+            position: 3,
+            original: { action: 'click', selector: '.btn' },
+            suggested: { action: 'click', selector: '[data-testid="primary-action"]' },
+            reason: 'Use data-testid for more stable element targeting',
+          },
+          {
+            type: 'add_step',
+            position: 5,
+            step: { action: 'scroll', randomized: true },
+            reason: 'Add natural scroll behavior before interaction',
+          },
+        ],
+        alternative_flows: [
+          {
+            name: 'Error Recovery Flow',
+            description: 'Alternative path when primary action fails',
+            steps: [
+              { action: 'wait', duration: 3 },
+              { action: 'scroll', randomized: true },
+              { action: 'click', selector: '.retry-btn' },
+            ],
+          },
+        ],
+        ai_powered: false,
+      };
+
+      return new Response(JSON.stringify(mockSuggestions), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    // POST /ai/logs/explain - Explain session failure
+    if (req.method === 'POST' && path === '/ai/logs/explain') {
+      const { session_id } = await req.json();
+      
+      // Fetch actual logs for context
+      const { data: logs } = await supabase
+        .from('session_logs')
+        .select('*')
+        .eq('session_id', session_id)
+        .order('timestamp', { ascending: true });
+
+      const { data: session } = await supabase
+        .from('sessions')
+        .select('*, scenarios(*)')
+        .eq('id', session_id)
+        .single();
+
+      const errorLogs = logs?.filter(l => l.level === 'error') || [];
+      
+      // Mock response - will be replaced with OpenRouter call
+      const mockExplanation = {
+        session_id,
+        summary: session?.error_message || 'Session failed during execution',
+        root_cause: {
+          type: 'element_not_found',
+          description: 'The target element was not present in the DOM when the action was attempted',
+          step_index: errorLogs[0]?.step_index ?? 0,
+          confidence: 0.85,
+        },
+        contributing_factors: [
+          'Page load timing exceeded expected threshold',
+          'Dynamic content rendered after action attempt',
+          'Possible A/B test variant with different DOM structure',
+        ],
+        recommendations: [
+          {
+            priority: 'high',
+            action: 'Add explicit wait for element visibility before click',
+            code_hint: '{ action: "wait", duration: 3 }',
+          },
+          {
+            priority: 'medium',
+            action: 'Use more resilient selector strategy',
+            code_hint: 'Consider data-testid or aria-label selectors',
+          },
+        ],
+        is_resumable: session?.is_resumable ?? false,
+        resume_from_step: session?.last_successful_step ?? null,
+        ai_powered: false,
+      };
+
+      return new Response(JSON.stringify(mockExplanation), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    // POST /ai/sessions/insights - Aggregated session insights
+    if (req.method === 'POST' && path === '/ai/sessions/insights') {
+      const { from_date, to_date, scenario_ids } = await req.json();
+      
+      // Fetch session data for analysis
+      let query = supabase
+        .from('sessions')
+        .select('*, scenarios(name)')
+        .order('created_at', { ascending: false })
+        .limit(100);
+
+      if (from_date) query = query.gte('created_at', from_date);
+      if (to_date) query = query.lte('created_at', to_date);
+      if (scenario_ids?.length) query = query.in('scenario_id', scenario_ids);
+
+      const { data: sessions } = await query;
+      
+      const totalSessions = sessions?.length || 0;
+      const successCount = sessions?.filter(s => s.status === 'success').length || 0;
+      const failedCount = sessions?.filter(s => s.status === 'error').length || 0;
+
+      // Mock response - will be replaced with OpenRouter call
+      const mockInsights = {
+        period: { from: from_date, to: to_date },
+        summary: {
+          total_sessions: totalSessions,
+          success_rate: totalSessions > 0 ? (successCount / totalSessions * 100).toFixed(1) : 0,
+          avg_duration_seconds: 95,
+          trend: 'improving',
+        },
+        patterns: [
+          {
+            type: 'failure_cluster',
+            description: 'Higher failure rate during peak hours (14:00-18:00 UTC)',
+            affected_sessions: Math.floor(failedCount * 0.6),
+            severity: 'medium',
+          },
+          {
+            type: 'step_bottleneck',
+            description: 'Step 3 (click action) has 40% longer execution time than average',
+            recommendation: 'Consider optimizing element selector or adding pre-wait',
+            severity: 'low',
+          },
+          {
+            type: 'success_pattern',
+            description: 'Sessions with scroll actions before clicks have 25% higher success rate',
+            recommendation: 'Add natural scroll behavior to scenarios',
+            severity: 'info',
+          },
+        ],
+        weak_steps: [
+          { step_action: 'click', failure_rate: 0.15, common_error: 'Element not found' },
+          { step_action: 'comment', failure_rate: 0.08, common_error: 'Timeout waiting for input' },
+        ],
+        optimization_tips: [
+          'Increase wait times by 20% for scenarios targeting dynamic SPAs',
+          'Consider implementing retry logic for network-dependent actions',
+          'Profile-specific success rates suggest some profiles need cookie refresh',
+        ],
+        ai_powered: false,
+      };
+
+      return new Response(JSON.stringify(mockInsights), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
     return new Response(JSON.stringify({ error: 'Not found' }), {
       status: 404,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
