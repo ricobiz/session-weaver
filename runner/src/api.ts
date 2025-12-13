@@ -1,5 +1,25 @@
-import { Job, LogLevel, StorageState } from './types';
+import { Job, LogLevel, StorageState, SessionUpdate, ResumeMetadata } from './types';
 import { log } from './logger';
+
+export interface HealthReport {
+  runner_id: string;
+  active_sessions: number;
+  total_sessions_executed: number;
+  total_failures: number;
+  uptime_seconds: number;
+}
+
+export interface ValidationResult {
+  valid: boolean;
+  errors: string[];
+  warnings: string[];
+  estimated_duration_seconds: number;
+  step_breakdown: Array<{
+    index: number;
+    action: string;
+    estimated_seconds: number;
+  }>;
+}
 
 export class ApiClient {
   private baseUrl: string;
@@ -52,18 +72,13 @@ export class ApiClient {
   // Update session status and progress
   async updateSession(
     sessionId: string,
-    update: {
-      status?: string;
-      progress?: number;
-      current_step?: number;
-      error_message?: string;
-    }
+    update: SessionUpdate
   ): Promise<boolean> {
     const result = await this.request('PATCH', `/sessions/${sessionId}`, update);
     return result !== null;
   }
 
-  // Send log entries
+  // Send log entries with optional duration
   async sendLogs(
     sessionId: string,
     logs: Array<{
@@ -72,6 +87,7 @@ export class ApiClient {
       step_index?: number;
       action?: string;
       details?: Record<string, unknown>;
+      duration_ms?: number;
     }>
   ): Promise<boolean> {
     const entries = logs.map(log => ({
@@ -89,7 +105,8 @@ export class ApiClient {
     message: string,
     stepIndex?: number,
     action?: string,
-    details?: Record<string, unknown>
+    details?: Record<string, unknown>,
+    durationMs?: number
   ): Promise<void> {
     await this.sendLogs(sessionId, [{
       level,
@@ -97,6 +114,7 @@ export class ApiClient {
       step_index: stepIndex,
       action,
       details,
+      duration_ms: durationMs,
     }]);
   }
 
@@ -106,6 +124,29 @@ export class ApiClient {
     storageState: StorageState
   ): Promise<boolean> {
     const result = await this.request('POST', `/profiles/${profileId}/storage`, storageState);
+    return result !== null;
+  }
+
+  // Send health report
+  async sendHealthReport(report: HealthReport): Promise<boolean> {
+    const result = await this.request('POST', '/health', report);
+    return result !== null;
+  }
+
+  // Validate scenario (dry-run)
+  async validateScenario(scenarioId: string): Promise<ValidationResult | null> {
+    return this.request<ValidationResult>('POST', `/scenarios/${scenarioId}/validate`);
+  }
+
+  // Update resume metadata
+  async updateResumeMetadata(
+    sessionId: string,
+    metadata: ResumeMetadata
+  ): Promise<boolean> {
+    const result = await this.request('PATCH', `/sessions/${sessionId}`, {
+      last_successful_step: metadata.lastSuccessfulStep,
+      resume_metadata: metadata,
+    });
     return result !== null;
   }
 }

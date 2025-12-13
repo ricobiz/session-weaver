@@ -336,7 +336,6 @@ serve(async (req) => {
         supabase.from('scenarios').select('*', { count: 'exact', head: true })
       ]);
 
-      // Calculate average duration
       const { data: avgData } = await supabase
         .from('sessions')
         .select('execution_time_ms')
@@ -359,6 +358,123 @@ serve(async (req) => {
         totalProfiles: profileCount || 0,
         totalScenarios: scenarioCount || 0
       }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    // POST /health - Runner health report
+    if (req.method === 'POST' && path === '/health') {
+      const body = await req.json();
+      
+      const { error } = await supabase
+        .from('runner_health')
+        .upsert({
+          runner_id: body.runner_id,
+          last_heartbeat: new Date().toISOString(),
+          active_sessions: body.active_sessions,
+          total_sessions_executed: body.total_sessions_executed,
+          total_failures: body.total_failures,
+          uptime_seconds: body.uptime_seconds,
+        }, { onConflict: 'runner_id' });
+
+      if (error) {
+        console.error('[session-api] Health report error:', error);
+      }
+
+      return new Response(JSON.stringify({ success: true }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    // POST /scenarios/:id/validate - Validate scenario (dry-run)
+    if (req.method === 'POST' && path.match(/^\/scenarios\/[^/]+\/validate$/)) {
+      const scenarioId = path.split('/')[2];
+      
+      const { data: scenario, error } = await supabase
+        .from('scenarios')
+        .select('steps')
+        .eq('id', scenarioId)
+        .single();
+
+      if (error || !scenario) {
+        return new Response(JSON.stringify({ error: 'Scenario not found' }), {
+          status: 404,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      const steps = scenario.steps as any[];
+      const validActions = ['open', 'play', 'scroll', 'click', 'like', 'comment', 'wait'];
+      const errors: string[] = [];
+      const warnings: string[] = [];
+      const stepBreakdown: any[] = [];
+      let totalDuration = 0;
+
+      steps.forEach((step, i) => {
+        if (!step.action) errors.push(`Step ${i + 1}: action is required`);
+        else if (!validActions.includes(step.action)) errors.push(`Step ${i + 1}: unknown action "${step.action}"`);
+        
+        if (step.action === 'open' && !step.target) errors.push(`Step ${i + 1}: target URL required for open`);
+        if (step.action === 'comment' && !step.text) errors.push(`Step ${i + 1}: text required for comment`);
+        
+        const dur = step.duration || (step.action === 'play' ? 30 : step.action === 'comment' ? 10 : 5);
+        totalDuration += dur;
+        stepBreakdown.push({ index: i, action: step.action, estimated_seconds: dur });
+      });
+
+      // Update scenario validation status
+      await supabase
+        .from('scenarios')
+        .update({ 
+          is_valid: errors.length === 0,
+          validation_errors: errors,
+        })
+        .eq('id', scenarioId);
+
+      return new Response(JSON.stringify({
+        valid: errors.length === 0,
+        errors,
+        warnings,
+        estimated_duration_seconds: totalDuration,
+        step_breakdown: stepBreakdown
+      }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    // GET /export - Export data as JSON
+    if (req.method === 'GET' && path === '/export') {
+      const type = url.searchParams.get('type') || 'sessions';
+      const from = url.searchParams.get('from');
+      const to = url.searchParams.get('to');
+
+      let query = supabase.from(type).select('*');
+      
+      if (from) query = query.gte('created_at', from);
+      if (to) query = query.lte('created_at', to);
+      
+      const { data, error } = await query.limit(1000);
+
+      if (error) {
+        return new Response(JSON.stringify({ error: 'Export failed' }), {
+          status: 500,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      return new Response(JSON.stringify({ data, count: data?.length || 0 }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    // GET /runners - Get runner health status
+    if (req.method === 'GET' && path === '/runners') {
+      const { data } = await supabase
+        .from('runner_health')
+        .select('*')
+        .order('last_heartbeat', { ascending: false });
+
+      return new Response(JSON.stringify(data || []), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }

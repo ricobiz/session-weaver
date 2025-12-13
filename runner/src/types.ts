@@ -8,6 +8,8 @@ export interface ScenarioStep {
   text?: string;
   randomized?: boolean;
   selector?: string;
+  retryable?: boolean;  // Can this step be retried?
+  maxRetries?: number;  // Override default retry count
 }
 
 // Profile with storage state
@@ -66,6 +68,26 @@ export interface Session {
   scenario_id: string;
   profiles: Profile;
   scenarios: Scenario;
+  retry_count?: number;
+  max_retries?: number;
+  last_successful_step?: number | null;
+  is_resumable?: boolean;
+  resume_metadata?: ResumeMetadata;
+}
+
+// Resume metadata
+export interface ResumeMetadata {
+  lastSuccessfulStep: number;
+  lastAttemptAt: string;
+  stepStates?: Record<number, StepState>;
+}
+
+// Step execution state
+export interface StepState {
+  completed: boolean;
+  attempts: number;
+  lastError?: string;
+  durationMs?: number;
 }
 
 // Job from API
@@ -73,6 +95,18 @@ export interface Job {
   job_id: string;
   session: Session;
   delay_before_start_ms: number;
+}
+
+// Session update payload
+export interface SessionUpdate {
+  status?: string;
+  progress?: number;
+  current_step?: number;
+  error_message?: string;
+  retry_count?: number;
+  last_successful_step?: number;
+  is_resumable?: boolean;
+  resume_metadata?: ResumeMetadata;
 }
 
 // Log levels
@@ -105,4 +139,6 @@ export interface RunnerConfig {
   maxConcurrency: number;
   headless: boolean;
   logLevel: LogLevel;
+  stepRetryLimit: number;
+  sessionRetryLimit: number;
 }

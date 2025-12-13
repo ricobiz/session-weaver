@@ -1,0 +1,75 @@
+version: '3.8'
+
+services:
+  # Primary runner instance
+  runner-1:
+    build: .
+    container_name: session-runner-1
+    environment:
+      - API_BASE_URL=${API_BASE_URL}
+      - RUNNER_ID=runner-docker-1
+      - MAX_CONCURRENCY=3
+      - POLL_INTERVAL_MS=5000
+      - HEADLESS=true
+      - LOG_LEVEL=info
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: '2'
+    networks:
+      - runner-network
+    healthcheck:
+      test: ["CMD", "node", "-e", "console.log('healthy')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Secondary runner instance (horizontal scaling)
+  runner-2:
+    build: .
+    container_name: session-runner-2
+    environment:
+      - API_BASE_URL=${API_BASE_URL}
+      - RUNNER_ID=runner-docker-2
+      - MAX_CONCURRENCY=3
+      - POLL_INTERVAL_MS=5000
+      - HEADLESS=true
+      - LOG_LEVEL=info
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: '2'
+    networks:
+      - runner-network
+    profiles:
+      - scale
+
+  # Third runner instance (high-scale deployment)
+  runner-3:
+    build: .
+    container_name: session-runner-3
+    environment:
+      - API_BASE_URL=${API_BASE_URL}
+      - RUNNER_ID=runner-docker-3
+      - MAX_CONCURRENCY=3
+      - POLL_INTERVAL_MS=5000
+      - HEADLESS=true
+      - LOG_LEVEL=info
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: '2'
+    networks:
+      - runner-network
+    profiles:
+      - scale
+
+networks:
+  runner-network:
+    driver: bridge
