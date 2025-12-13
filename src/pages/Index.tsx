@@ -11,6 +11,9 @@ import { CreateScenarioDialog } from '@/components/CreateScenarioDialog';
 import { SessionTimeline } from '@/components/SessionTimeline';
 import { MetricsDashboard } from '@/components/MetricsDashboard';
 import { DataExport } from '@/components/DataExport';
+import { AIScenarioInsights } from '@/components/AIScenarioInsights';
+import { AIFailureExplanation } from '@/components/AIFailureExplanation';
+import { AIInsightsPanel } from '@/components/AIInsightsPanel';
 import { useStats, useProfiles, useScenarios, useSessions, useSessionLogs, useRunnerHealth } from '@/hooks/useSessionData';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -27,7 +30,8 @@ import {
   Plus,
   Loader2,
   BarChart3,
-  AlignLeft
+  AlignLeft,
+  Sparkles
 } from 'lucide-react';
 import { Database } from '@/integrations/supabase/types';
 
@@ -44,7 +48,7 @@ const Index = () => {
   const [selectedScenario, setSelectedScenario] = useState<Scenario | null>(null);
   const [profileDialogOpen, setProfileDialogOpen] = useState(false);
   const [scenarioDialogOpen, setScenarioDialogOpen] = useState(false);
-  const [rightPanelView, setRightPanelView] = useState<'logs' | 'timeline' | 'metrics'>('logs');
+  const [rightPanelView, setRightPanelView] = useState<'logs' | 'timeline' | 'metrics' | 'ai'>('logs');
 
   const { data: logs = [] } = useSessionLogs(selectedSessionId);
 
@@ -262,7 +266,7 @@ const Index = () => {
                 </TabsList>
                 
                 {scenarios.map((s) => (
-                  <TabsContent key={s.id} value={s.id} className="mt-3">
+                  <TabsContent key={s.id} value={s.id} className="mt-3 space-y-4">
                     <ScenarioViewer 
                       scenario={{
                         id: s.id,
@@ -272,6 +276,11 @@ const Index = () => {
                         estimatedDuration: s.estimated_duration_seconds || 0,
                         lastRun: s.last_run_at || undefined
                       }} 
+                    />
+                    {/* AI Scenario Insights */}
+                    <AIScenarioInsights 
+                      scenarioId={s.id} 
+                      scenarioName={s.name} 
                     />
                   </TabsContent>
                 ))}
@@ -289,9 +298,11 @@ const Index = () => {
                 {rightPanelView === 'logs' && <Terminal className="w-4 h-4 text-primary" />}
                 {rightPanelView === 'timeline' && <AlignLeft className="w-4 h-4 text-primary" />}
                 {rightPanelView === 'metrics' && <BarChart3 className="w-4 h-4 text-primary" />}
+                {rightPanelView === 'ai' && <Sparkles className="w-4 h-4 text-primary" />}
                 {rightPanelView === 'logs' && 'Session Output'}
                 {rightPanelView === 'timeline' && 'Execution Timeline'}
                 {rightPanelView === 'metrics' && 'Metrics'}
+                {rightPanelView === 'ai' && 'AI Insights'}
               </div>
               <div className="flex gap-1">
                 <Button
@@ -318,6 +329,14 @@ const Index = () => {
                 >
                   <BarChart3 className="w-3.5 h-3.5" />
                 </Button>
+                <Button
+                  size="sm"
+                  variant={rightPanelView === 'ai' ? 'default' : 'ghost'}
+                  onClick={() => setRightPanelView('ai')}
+                  className="h-7 px-2"
+                >
+                  <Sparkles className="w-3.5 h-3.5" />
+                </Button>
               </div>
             </div>
             
@@ -330,8 +349,17 @@ const Index = () => {
                 )}
                 <LogViewer 
                   logs={formattedLogs} 
-                  maxHeight="480px"
+                  maxHeight="400px"
                 />
+                {/* AI Failure Explanation for failed sessions */}
+                {selectedSession?.status === 'error' && (
+                  <AIFailureExplanation
+                    sessionId={selectedSession.id}
+                    errorMessage={selectedSession.error_message}
+                    isResumable={selectedSession.is_resumable}
+                    lastSuccessfulStep={selectedSession.last_successful_step}
+                  />
+                )}
               </>
             )}
 
@@ -349,6 +377,10 @@ const Index = () => {
                 scenarios={scenarios}
                 runners={runners}
               />
+            )}
+
+            {rightPanelView === 'ai' && (
+              <AIInsightsPanel />
             )}
           </div>
         </div>
