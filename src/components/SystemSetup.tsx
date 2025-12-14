@@ -336,12 +336,20 @@ export function SystemSetup() {
           <div className="mt-6 p-4 rounded-lg border-2 border-dashed border-blue-500/30 bg-blue-500/5">
             <div className="flex items-center gap-2 mb-3">
               <Cloud className="w-5 h-5 text-blue-500" />
-              <span className="font-medium">Deploy Backend Runner</span>
+              <span className="font-medium">Start Backend Runner</span>
             </div>
             
             <p className="text-xs text-muted-foreground mb-4">
-              No runners detected. Deploy a Playwright runner to Railway with one click.
+              No runners detected. Run the runner locally or deploy to your server.
+              The runner executes Playwright automation tasks.
             </p>
+
+            <div className="p-3 rounded bg-muted/50 mb-4">
+              <p className="text-xs font-medium mb-2">Quick Start (Local):</p>
+              <code className="text-[10px] text-primary break-all">
+                cd runner && npm install && npm start
+              </code>
+            </div>
 
             {railwayStatus?.connected ? (
               <div className="space-y-3">
