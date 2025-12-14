@@ -3,6 +3,7 @@ import { openAction } from './open';
 import { waitAction } from './wait';
 import { scrollAction } from './scroll';
 import { clickAction } from './click';
+import { typeAction } from './type';
 import { playAction } from './play';
 import { likeAction } from './like';
 import { commentAction } from './comment';
@@ -27,6 +28,10 @@ const actionRegistry: ActionRegistry = {
   
   click: clickAction,   // Automatic vision fallback if selector fails
   tap: clickAction,     // Alias
+  
+  type: typeAction,     // Human-like typing
+  input: typeAction,    // Alias
+  fill: typeAction,     // Alias
   
   play: playAction,
   listen: playAction,   // Alias
