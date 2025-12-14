@@ -779,6 +779,232 @@ serve(async (req) => {
       });
     }
 
+    // POST /test-autonomous - Run autonomous AI-driven task execution
+    if (req.method === 'POST' && path === '/test-autonomous') {
+      const { url, goal, max_actions = 50 } = await req.json();
+      
+      if (!url || !goal) {
+        return new Response(JSON.stringify({ 
+          error: 'url and goal are required',
+          example: { url: 'https://example.com', goal: 'Register a new account with random username and password' }
+        }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      const OPENROUTER_API_KEY = Deno.env.get('OPENROUTER_API_KEY');
+      if (!OPENROUTER_API_KEY) {
+        return new Response(JSON.stringify({ error: 'OPENROUTER_API_KEY not set' }), {
+          status: 500,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      console.log(`[runner-test] Starting autonomous execution: "${goal}" on ${url}`);
+      
+      const sessionId = crypto.randomUUID();
+      const executionLog: any[] = [];
+      let actionsExecuted = 0;
+      let goalAchieved = false;
+      let lastScreenshot = '';
+      let currentUrl = url;
+      
+      // Helper to log
+      const logAction = (type: string, details: any) => {
+        executionLog.push({ 
+          action: actionsExecuted, 
+          type, 
+          timestamp: new Date().toISOString(),
+          ...details 
+        });
+        console.log(`[autonomous] Step ${actionsExecuted}: ${type}`, JSON.stringify(details).substring(0, 200));
+      };
+
+      try {
+        // Step 1: Navigate to target URL
+        const navResult = await fetch(`${RUNNER_API_URL}/execute`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'navigate', url })
+        }).then(r => r.json());
+        
+        if (!navResult.success) {
+          return new Response(JSON.stringify({ 
+            error: 'Navigation failed', 
+            details: navResult 
+          }), {
+            status: 500,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
+        
+        currentUrl = navResult.currentUrl || url;
+        logAction('navigate', { url: currentUrl, success: true });
+        
+        // Wait for page load
+        await new Promise(r => setTimeout(r, 2000));
+        
+        // Main autonomous loop
+        while (actionsExecuted < max_actions && !goalAchieved) {
+          actionsExecuted++;
+          
+          // Take screenshot
+          const screenshotResult = await fetch(`${RUNNER_API_URL}/execute`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: 'screenshot' })
+          }).then(r => r.json());
+          
+          if (!screenshotResult.success || !screenshotResult.screenshot) {
+            logAction('screenshot', { success: false, error: 'Failed to capture screenshot' });
+            break;
+          }
+          
+          lastScreenshot = screenshotResult.screenshot;
+          currentUrl = screenshotResult.currentUrl || currentUrl;
+          
+          // Call AI agent to decide next action
+          const agentUrl = `${Deno.env.get('SUPABASE_URL')}/functions/v1/agent-executor/decide`;
+          const agentResponse = await fetch(agentUrl, {
+            method: 'POST',
+            headers: { 
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}`
+            },
+            body: JSON.stringify({
+              session_id: sessionId,
+              goal,
+              current_url: currentUrl,
+              screenshot_base64: lastScreenshot,
+              previous_actions: executionLog.slice(-5).map(l => l.type),
+              attempt: actionsExecuted
+            })
+          });
+          
+          if (!agentResponse.ok) {
+            const errorText = await agentResponse.text();
+            logAction('ai_error', { status: agentResponse.status, error: errorText });
+            break;
+          }
+          
+          const aiDecision = await agentResponse.json();
+          logAction('ai_decision', { 
+            action: aiDecision.action?.type,
+            reasoning: aiDecision.reasoning?.substring(0, 100),
+            confidence: aiDecision.confidence,
+            goal_progress: aiDecision.goal_progress
+          });
+          
+          // Check for terminal states
+          if (aiDecision.action?.type === 'complete') {
+            goalAchieved = true;
+            logAction('goal_achieved', { reason: aiDecision.action.reason });
+            break;
+          }
+          
+          if (aiDecision.action?.type === 'fail') {
+            logAction('goal_failed', { reason: aiDecision.action.reason });
+            break;
+          }
+          
+          // Execute the AI-decided action
+          let actionPayload: any = { action: aiDecision.action?.type };
+          
+          switch (aiDecision.action?.type) {
+            case 'navigate':
+              actionPayload.url = aiDecision.action.url;
+              break;
+            case 'click':
+              if (aiDecision.action.coordinates) {
+                actionPayload.coordinates = aiDecision.action.coordinates;
+              } else if (aiDecision.action.selector) {
+                actionPayload.selector = aiDecision.action.selector;
+              }
+              actionPayload.click_area_radius = 5;
+              break;
+            case 'type':
+              actionPayload.text = aiDecision.action.text;
+              if (aiDecision.action.selector) {
+                actionPayload.selector = aiDecision.action.selector;
+              }
+              break;
+            case 'scroll':
+              actionPayload.coordinates = { 
+                y: (aiDecision.action.direction === 'up' ? -1 : 1) * (aiDecision.action.amount || 300) 
+              };
+              break;
+            case 'wait':
+              actionPayload.action = 'wait';
+              actionPayload.duration = aiDecision.action.amount || 1000;
+              break;
+            case 'screenshot':
+              // Already captured, just continue
+              continue;
+            default:
+              logAction('unknown_action', { type: aiDecision.action?.type });
+              continue;
+          }
+          
+          // Execute action on runner
+          const actionResult = await fetch(`${RUNNER_API_URL}/execute`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(actionPayload)
+          }).then(r => r.json());
+          
+          logAction('execute', { 
+            action: actionPayload.action, 
+            success: actionResult.success,
+            error: actionResult.error
+          });
+          
+          if (!actionResult.success) {
+            // Try once more with a small wait
+            await new Promise(r => setTimeout(r, 500));
+          }
+          
+          // Wait between actions
+          await new Promise(r => setTimeout(r, 800));
+        }
+        
+        // Final screenshot
+        const finalScreenshot = await fetch(`${RUNNER_API_URL}/execute`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'screenshot' })
+        }).then(r => r.json());
+        
+        return new Response(JSON.stringify({
+          success: goalAchieved,
+          session_id: sessionId,
+          goal,
+          start_url: url,
+          final_url: finalScreenshot.currentUrl || currentUrl,
+          actions_executed: actionsExecuted,
+          max_actions,
+          execution_log: executionLog,
+          final_screenshot: finalScreenshot.screenshot,
+          summary: goalAchieved 
+            ? `Goal achieved in ${actionsExecuted} actions` 
+            : `Stopped after ${actionsExecuted} actions (max: ${max_actions})`
+        }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+        
+      } catch (error) {
+        return new Response(JSON.stringify({ 
+          error: error instanceof Error ? error.message : String(error),
+          session_id: sessionId,
+          execution_log: executionLog,
+          final_screenshot: lastScreenshot
+        }), {
+          status: 500,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+    }
+
     return new Response(JSON.stringify({ error: 'Not found' }), {
       status: 404,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
