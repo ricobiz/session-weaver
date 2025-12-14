@@ -3,7 +3,7 @@
 nixPkgs = ["nodejs_20", "npm"]
 
 [phases.install]
-cmds = ["cd runner && npm install"]
+cmds = ["cd runner && npm install && npx playwright install chromium --with-deps"]
 
 [phases.build]
 cmds = ["cd runner && npm run build"]
