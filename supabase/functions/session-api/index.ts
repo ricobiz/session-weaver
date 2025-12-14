@@ -806,14 +806,105 @@ serve(async (req) => {
     }
 
     // ============================================
-    // AI ENDPOINTS (Mocked for now - OpenRouter ready)
+    // AI ENDPOINTS - OpenRouter Integration
     // ============================================
 
-    // POST /ai/scenario/analyze - Analyze scenario quality
+    const OPENROUTER_API_KEY = Deno.env.get('OPENROUTER_API_KEY');
+    const DEFAULT_MODEL = 'anthropic/claude-sonnet-4-5';
+
+    // Helper function for OpenRouter API calls
+    async function callOpenRouter(model: string, messages: Array<{role: string, content: string}>) {
+      if (!OPENROUTER_API_KEY) {
+        throw new Error('OPENROUTER_API_KEY not configured');
+      }
+
+      const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${OPENROUTER_API_KEY}`,
+          'Content-Type': 'application/json',
+          'HTTP-Referer': 'https://lovable.dev',
+          'X-Title': 'Agent Control Plane',
+        },
+        body: JSON.stringify({
+          model,
+          messages,
+          max_tokens: 2000,
+        }),
+      });
+
+      if (!response.ok) {
+        const error = await response.text();
+        console.error('[OpenRouter] API error:', error);
+        throw new Error(`OpenRouter API error: ${response.status}`);
+      }
+
+      return response.json();
+    }
+
+    // GET /ai/models - List available models from OpenRouter
+    if (path === '/ai/models' && (req.method === 'GET' || req.method === 'POST')) {
+      try {
+        const response = await fetch('https://openrouter.ai/api/v1/models', {
+          headers: {
+            'Authorization': `Bearer ${OPENROUTER_API_KEY}`,
+          },
+        });
+
+        if (!response.ok) {
+          return new Response(JSON.stringify({ error: 'Failed to fetch models', status: response.status }), {
+            status: 500,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
+
+        const data = await response.json();
+        return new Response(JSON.stringify(data), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      } catch (error) {
+        console.error('[session-api] Models fetch error:', error);
+        return new Response(JSON.stringify({ error: 'Failed to fetch models' }), {
+          status: 500,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+    }
+
+    // POST /ai/test - Test OpenRouter API key
+    if (req.method === 'POST' && path === '/ai/test') {
+      try {
+        if (!OPENROUTER_API_KEY) {
+          return new Response(JSON.stringify({ success: false, error: 'API key not configured' }), {
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
+
+        const response = await fetch('https://openrouter.ai/api/v1/models', {
+          headers: { 'Authorization': `Bearer ${OPENROUTER_API_KEY}` },
+        });
+
+        if (response.ok) {
+          return new Response(JSON.stringify({ success: true }), {
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        } else {
+          return new Response(JSON.stringify({ success: false, error: 'Invalid API key' }), {
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
+      } catch (error) {
+        return new Response(JSON.stringify({ success: false, error: 'Connection failed' }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+    }
+
+    // POST /ai/scenario/analyze - Analyze scenario quality (Mocked - AI ready)
     if (req.method === 'POST' && path === '/ai/scenario/analyze') {
       const { scenario_id } = await req.json();
       
-      // Mock response - will be replaced with OpenRouter call
+      // Mock response - structure ready for AI
       const mockAnalysis = {
         scenario_id,
         quality_score: 0.85,
@@ -832,7 +923,7 @@ serve(async (req) => {
           { type: 'optimization', message: 'Consider adding explicit waits after navigation' },
           { type: 'reliability', message: 'Use more specific selectors for click actions' },
         ],
-        ai_powered: false, // Will be true when OpenRouter is connected
+        ai_powered: false,
       };
 
       return new Response(JSON.stringify(mockAnalysis), {
@@ -840,44 +931,15 @@ serve(async (req) => {
       });
     }
 
-    // POST /ai/scenario/suggest - Generate scenario improvements
+    // POST /ai/scenario/suggest - Generate scenario improvements (Mocked - AI ready)
     if (req.method === 'POST' && path === '/ai/scenario/suggest') {
-      const { scenario_id, context } = await req.json();
+      const { scenario_id } = await req.json();
       
-      // Mock response - will be replaced with OpenRouter call
       const mockSuggestions = {
         scenario_id,
         suggestions: [
-          {
-            type: 'add_step',
-            position: 1,
-            step: { action: 'wait', duration: 2 },
-            reason: 'Add buffer after page load for dynamic content',
-          },
-          {
-            type: 'modify_step',
-            position: 3,
-            original: { action: 'click', selector: '.btn' },
-            suggested: { action: 'click', selector: '[data-testid="primary-action"]' },
-            reason: 'Use data-testid for more stable element targeting',
-          },
-          {
-            type: 'add_step',
-            position: 5,
-            step: { action: 'scroll', randomized: true },
-            reason: 'Add natural scroll behavior before interaction',
-          },
-        ],
-        alternative_flows: [
-          {
-            name: 'Error Recovery Flow',
-            description: 'Alternative path when primary action fails',
-            steps: [
-              { action: 'wait', duration: 3 },
-              { action: 'scroll', randomized: true },
-              { action: 'click', selector: '.retry-btn' },
-            ],
-          },
+          { type: 'add_step', position: 1, step: { action: 'wait', duration: 2 }, reason: 'Add buffer after page load' },
+          { type: 'modify_step', position: 3, suggested: { action: 'click', selector: '[data-testid="action"]' }, reason: 'Use stable selector' },
         ],
         ai_powered: false,
       };
@@ -887,9 +949,10 @@ serve(async (req) => {
       });
     }
 
-    // POST /ai/logs/explain - Explain session failure
+    // POST /ai/logs/explain - REAL AI-POWERED: Explain session failure
     if (req.method === 'POST' && path === '/ai/logs/explain') {
-      const { session_id } = await req.json();
+      const { session_id, model } = await req.json();
+      const selectedModel = model || DEFAULT_MODEL;
       
       // Fetch actual logs for context
       const { data: logs } = await supabase
@@ -904,50 +967,135 @@ serve(async (req) => {
         .eq('id', session_id)
         .single();
 
-      const errorLogs = logs?.filter(l => l.level === 'error') || [];
-      
-      // Mock response - will be replaced with OpenRouter call
-      const mockExplanation = {
-        session_id,
-        summary: session?.error_message || 'Session failed during execution',
-        root_cause: {
-          type: 'element_not_found',
-          description: 'The target element was not present in the DOM when the action was attempted',
-          step_index: errorLogs[0]?.step_index ?? 0,
-          confidence: 0.85,
-        },
-        contributing_factors: [
-          'Page load timing exceeded expected threshold',
-          'Dynamic content rendered after action attempt',
-          'Possible A/B test variant with different DOM structure',
-        ],
-        recommendations: [
-          {
-            priority: 'high',
-            action: 'Add explicit wait for element visibility before click',
-            code_hint: '{ action: "wait", duration: 3 }',
+      // Check if we have OpenRouter configured
+      if (!OPENROUTER_API_KEY) {
+        // Return mock response if no API key
+        const errorLogs = logs?.filter(l => l.level === 'error') || [];
+        return new Response(JSON.stringify({
+          session_id,
+          summary: session?.error_message || 'Session failed during execution',
+          root_cause: {
+            type: 'element_not_found',
+            description: 'The target element was not present in the DOM when the action was attempted',
+            step_index: errorLogs[0]?.step_index ?? 0,
+            confidence: 0.85,
           },
-          {
-            priority: 'medium',
-            action: 'Use more resilient selector strategy',
-            code_hint: 'Consider data-testid or aria-label selectors',
-          },
-        ],
-        is_resumable: session?.is_resumable ?? false,
-        resume_from_step: session?.last_successful_step ?? null,
-        ai_powered: false,
-      };
+          contributing_factors: [
+            'Page load timing exceeded expected threshold',
+            'Dynamic content rendered after action attempt',
+          ],
+          recommendations: [
+            { priority: 'high', action: 'Add explicit wait for element visibility', code_hint: '{ action: "wait", duration: 3 }' },
+          ],
+          is_resumable: session?.is_resumable ?? false,
+          resume_from_step: session?.last_successful_step ?? null,
+          ai_powered: false,
+          note: 'OpenRouter API key not configured. Using fallback analysis.',
+        }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
 
-      return new Response(JSON.stringify(mockExplanation), {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
+      // Build context for AI
+      const logSummary = logs?.map(l => `[${l.level}] Step ${l.step_index ?? '-'}: ${l.message}`).join('\n') || 'No logs available';
+      const scenarioSteps = JSON.stringify(session?.scenarios?.steps || [], null, 2);
+
+      const systemPrompt = `You are an expert automation debugging assistant. Analyze the following session failure and provide actionable insights.
+
+Your response MUST be valid JSON with this exact structure:
+{
+  "summary": "Brief one-line summary of the failure",
+  "root_cause": {
+    "type": "element_not_found|timeout|network_error|captcha_blocked|auth_required|unknown",
+    "description": "Detailed explanation of what went wrong",
+    "step_index": <number or null>,
+    "confidence": <0.0 to 1.0>
+  },
+  "contributing_factors": ["factor1", "factor2"],
+  "recommendations": [
+    {
+      "priority": "high|medium|low",
+      "action": "What to do",
+      "code_hint": "Optional code snippet or step suggestion"
+    }
+  ],
+  "is_resumable": <boolean>,
+  "resume_from_step": <number or null>
+}`;
+
+      const userPrompt = `Session ID: ${session_id}
+Error Message: ${session?.error_message || 'Unknown error'}
+Status: ${session?.status}
+Last Successful Step: ${session?.last_successful_step ?? 'None'}
+Total Steps: ${session?.total_steps}
+
+Scenario Steps:
+${scenarioSteps}
+
+Execution Logs:
+${logSummary}
+
+Analyze this failure and provide debugging insights.`;
+
+      try {
+        const aiResponse = await callOpenRouter(selectedModel, [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userPrompt },
+        ]);
+
+        const content = aiResponse.choices?.[0]?.message?.content || '';
+        
+        // Parse AI response
+        let parsedResponse;
+        try {
+          // Extract JSON from response (handle markdown code blocks)
+          const jsonMatch = content.match(/```json\n?([\s\S]*?)\n?```/) || content.match(/\{[\s\S]*\}/);
+          const jsonStr = jsonMatch ? (jsonMatch[1] || jsonMatch[0]) : content;
+          parsedResponse = JSON.parse(jsonStr);
+        } catch (parseError) {
+          console.error('[session-api] Failed to parse AI response:', parseError);
+          parsedResponse = {
+            summary: content.slice(0, 200),
+            root_cause: { type: 'unknown', description: 'AI analysis completed but response parsing failed', confidence: 0.5 },
+            contributing_factors: [],
+            recommendations: [],
+          };
+        }
+
+        return new Response(JSON.stringify({
+          session_id,
+          ...parsedResponse,
+          is_resumable: session?.is_resumable ?? false,
+          resume_from_step: session?.last_successful_step ?? null,
+          ai_powered: true,
+          model_used: selectedModel,
+        }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+
+      } catch (error) {
+        console.error('[session-api] OpenRouter call failed:', error);
+        // Fallback to mock response
+        return new Response(JSON.stringify({
+          session_id,
+          summary: session?.error_message || 'Session failed during execution',
+          root_cause: { type: 'unknown', description: 'AI analysis failed - using fallback', confidence: 0.3 },
+          contributing_factors: ['AI service temporarily unavailable'],
+          recommendations: [{ priority: 'medium', action: 'Retry analysis later' }],
+          is_resumable: session?.is_resumable ?? false,
+          resume_from_step: session?.last_successful_step ?? null,
+          ai_powered: false,
+          error: error instanceof Error ? error.message : 'Unknown error',
+        }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
     }
 
-    // POST /ai/sessions/insights - Aggregated session insights
+    // POST /ai/sessions/insights - Aggregated session insights (Mocked - AI ready)
     if (req.method === 'POST' && path === '/ai/sessions/insights') {
       const { from_date, to_date, scenario_ids } = await req.json();
       
-      // Fetch session data for analysis
       let query = supabase
         .from('sessions')
         .select('*, scenarios(name)')
@@ -964,7 +1112,6 @@ serve(async (req) => {
       const successCount = sessions?.filter(s => s.status === 'success').length || 0;
       const failedCount = sessions?.filter(s => s.status === 'error').length || 0;
 
-      // Mock response - will be replaced with OpenRouter call
       const mockInsights = {
         period: { from: from_date, to: to_date },
         summary: {
@@ -974,33 +1121,15 @@ serve(async (req) => {
           trend: 'improving',
         },
         patterns: [
-          {
-            type: 'failure_cluster',
-            description: 'Higher failure rate during peak hours (14:00-18:00 UTC)',
-            affected_sessions: Math.floor(failedCount * 0.6),
-            severity: 'medium',
-          },
-          {
-            type: 'step_bottleneck',
-            description: 'Step 3 (click action) has 40% longer execution time than average',
-            recommendation: 'Consider optimizing element selector or adding pre-wait',
-            severity: 'low',
-          },
-          {
-            type: 'success_pattern',
-            description: 'Sessions with scroll actions before clicks have 25% higher success rate',
-            recommendation: 'Add natural scroll behavior to scenarios',
-            severity: 'info',
-          },
+          { type: 'failure_cluster', description: 'Higher failure rate during peak hours', affected_sessions: Math.floor(failedCount * 0.6), severity: 'medium' },
+          { type: 'success_pattern', description: 'Sessions with scroll actions before clicks have higher success rate', recommendation: 'Add natural scroll behavior', severity: 'info' },
         ],
         weak_steps: [
           { step_action: 'click', failure_rate: 0.15, common_error: 'Element not found' },
-          { step_action: 'comment', failure_rate: 0.08, common_error: 'Timeout waiting for input' },
         ],
         optimization_tips: [
-          'Increase wait times by 20% for scenarios targeting dynamic SPAs',
-          'Consider implementing retry logic for network-dependent actions',
-          'Profile-specific success rates suggest some profiles need cookie refresh',
+          'Increase wait times for dynamic SPAs',
+          'Consider retry logic for network-dependent actions',
         ],
         ai_powered: false,
       };
