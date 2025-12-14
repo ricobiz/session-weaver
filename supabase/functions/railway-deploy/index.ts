@@ -159,6 +159,31 @@ Deno.serve(async (req) => {
     if (action === 'deploy') {
       console.log('Starting Railway deployment...');
 
+      // Step 0: Get user's workspaces to find the default team/workspace
+      const teamsData = await railwayQuery(RAILWAY_API_TOKEN, `
+        query {
+          me {
+            teams {
+              edges {
+                node {
+                  id
+                  name
+                }
+              }
+            }
+          }
+        }
+      `);
+
+      // Get the first team's ID as workspaceId
+      const teams = teamsData.me?.teams?.edges || [];
+      let workspaceId: string | null = null;
+      
+      if (teams.length > 0) {
+        workspaceId = teams[0].node.id;
+        console.log('Using workspace:', workspaceId, teams[0].node.name);
+      }
+
       // Step 1: Create project if doesn't exist
       let projectId: string;
       
@@ -183,7 +208,17 @@ Deno.serve(async (req) => {
         projectId = automationProject.node.id;
         console.log('Using existing project:', projectId);
       } else {
-        // Create new project
+        // Create new project with workspaceId (required by Railway API)
+        const projectInput: Record<string, any> = {
+          name: 'Automation-Runner',
+          description: 'Playwright automation runner for session execution',
+        };
+        
+        // Add teamId if we have a workspace
+        if (workspaceId) {
+          projectInput.teamId = workspaceId;
+        }
+
         const createResult = await railwayQuery(RAILWAY_API_TOKEN, `
           mutation($input: ProjectCreateInput!) {
             projectCreate(input: $input) {
@@ -192,10 +227,7 @@ Deno.serve(async (req) => {
             }
           }
         `, {
-          input: {
-            name: 'Automation-Runner',
-            description: 'Playwright automation runner for session execution',
-          }
+          input: projectInput
         });
 
         projectId = createResult.projectCreate.id;
