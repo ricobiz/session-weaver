@@ -6,12 +6,24 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-// Runner HTTP API endpoint (set this to your runner's address)
-const rawRunnerUrl = Deno.env.get('RUNNER_API_URL') || 'http://localhost:3001';
-const RUNNER_API_URL = rawRunnerUrl.replace(/\/$/, ''); // Remove trailing slash
 const OPENROUTER_API = 'https://openrouter.ai/api/v1/chat/completions';
 
-console.log('[runner-test] Using RUNNER_API_URL:', RUNNER_API_URL);
+// Helper to get runner URL from database
+async function getRunnerUrl(): Promise<string> {
+  const supabase = createClient(
+    Deno.env.get('SUPABASE_URL') ?? '',
+    Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+  );
+  
+  const { data } = await supabase
+    .from('railway_config')
+    .select('runner_url')
+    .eq('id', 'default')
+    .single();
+  
+  const runnerUrl = data?.runner_url || Deno.env.get('RUNNER_API_URL') || 'http://localhost:3001';
+  return runnerUrl.replace(/\/$/, ''); // Remove trailing slash
+}
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -20,7 +32,10 @@ serve(async (req) => {
 
   const url = new URL(req.url);
   const path = url.pathname.replace('/runner-test', '');
-
+  
+  // Get runner URL from database
+  const RUNNER_API_URL = await getRunnerUrl();
+  console.log(`[runner-test] Using RUNNER_API_URL: ${RUNNER_API_URL}`);
   console.log(`[runner-test] ${req.method} ${path}`);
 
   try {
