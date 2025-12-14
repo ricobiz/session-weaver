@@ -1,10 +1,8 @@
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
-import { Card, CardContent } from '@/components/ui/card';
-import { Progress } from '@/components/ui/progress';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
@@ -19,20 +17,18 @@ import {
   XCircle,
   Clock,
   Activity,
-  MonitorPlay,
-  Zap,
-  Target,
-  TrendingUp,
   Bot,
   Sparkles,
   Wifi,
   WifiOff,
   Server,
-  CircleDot,
+  Image,
+  User,
+  ExternalLink,
+  RotateCw,
+  Zap,
 } from 'lucide-react';
 import { OperatorBalanceHeader } from '@/components/operator/OperatorBalanceHeader';
-import { ActiveSessionsList } from '@/components/operator/ActiveSessionsList';
-import { SessionDetailPanel } from '@/components/operator/SessionDetailPanel';
 
 interface TaskSummary {
   id: string;
@@ -44,7 +40,6 @@ interface TaskSummary {
   sessionsFailed: number;
   sessionsRunning: number;
   startedAt: string | null;
-  estimatedCost: number;
 }
 
 interface ActiveSession {
@@ -55,8 +50,6 @@ interface ActiveSession {
   total_steps: number;
   runner_id?: string;
   captcha_status?: string;
-  captcha_detected_at?: string;
-  profile_state?: string;
   error_message?: string;
   last_screenshot_url?: string;
   current_url?: string;
@@ -71,12 +64,29 @@ interface RunnerHealth {
   active_sessions: number;
 }
 
+interface ChatMessage {
+  id: string;
+  type: 'user' | 'system' | 'screenshot' | 'error' | 'success';
+  content: string;
+  timestamp: Date;
+  sessionId?: string;
+  imageUrl?: string;
+}
+
 const Operator = () => {
   const [command, setCommand] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
-  const [statusMessage, setStatusMessage] = useState('');
   const [selectedModel, setSelectedModel] = useState('google/gemini-2.5-flash');
-  const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
+  const [loadingScreenshots, setLoadingScreenshots] = useState<Set<string>>(new Set());
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  // Auto-scroll to bottom
+  useEffect(() => {
+    if (scrollRef.current) {
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    }
+  }, [chatMessages]);
 
   // Fetch runner health for system status
   const { data: runners = [] } = useQuery({
@@ -91,14 +101,13 @@ const Operator = () => {
     refetchInterval: 5000,
   });
 
-  // Check if runners are online (heartbeat within last 30 seconds)
   const onlineRunners = runners.filter(r => {
     const lastBeat = new Date(r.last_heartbeat).getTime();
     return Date.now() - lastBeat < 30000;
   });
   const systemOnline = onlineRunners.length > 0;
 
-  // Fetch active tasks with aggregated progress
+  // Fetch active tasks
   const { data: activeTasks = [], refetch: refetchTasks } = useQuery({
     queryKey: ['operator-tasks'],
     queryFn: async () => {
@@ -107,7 +116,7 @@ const Operator = () => {
         .select('*')
         .in('status', ['active', 'pending', 'paused'])
         .order('created_at', { ascending: false })
-        .limit(5);
+        .limit(10);
 
       if (error) throw error;
       
@@ -134,7 +143,6 @@ const Operator = () => {
             sessionsFailed: failed,
             sessionsRunning: running,
             startedAt: task.started_at,
-            estimatedCost: total * 0.02,
           };
         })
       );
@@ -144,7 +152,7 @@ const Operator = () => {
     refetchInterval: 3000,
   });
 
-  // Fetch active sessions (running, queued, paused)
+  // Fetch active sessions
   const { data: activeSessions = [], refetch: refetchSessions } = useQuery({
     queryKey: ['operator-sessions'],
     queryFn: async () => {
@@ -158,8 +166,6 @@ const Operator = () => {
           total_steps,
           runner_id,
           captcha_status,
-          captcha_detected_at,
-          profile_state,
           error_message,
           last_screenshot_url,
           current_url,
@@ -180,24 +186,32 @@ const Operator = () => {
     refetchInterval: 2000,
   });
 
-  // Get selected session details
-  const selectedSession = activeSessions.find(s => s.id === selectedSessionId) || null;
-
-  // Aggregate stats
-  const totalActive = activeTasks.filter(t => t.status === 'active').length;
-  const totalCompleted = activeTasks.reduce((acc, t) => acc + t.sessionsCompleted, 0);
-  const totalFailed = activeTasks.reduce((acc, t) => acc + t.sessionsFailed, 0);
+  // Stats
   const totalRunning = activeSessions.filter(s => s.status === 'running').length;
   const totalQueued = activeSessions.filter(s => s.status === 'queued').length;
+  const totalCompleted = activeTasks.reduce((acc, t) => acc + t.sessionsCompleted, 0);
+  const totalFailed = activeTasks.reduce((acc, t) => acc + t.sessionsFailed, 0);
+
+  const addMessage = (msg: Omit<ChatMessage, 'id' | 'timestamp'>) => {
+    setChatMessages(prev => [...prev, {
+      ...msg,
+      id: Math.random().toString(36).slice(2),
+      timestamp: new Date(),
+    }]);
+  };
 
   const handleSubmit = async () => {
     if (!command.trim()) return;
     
+    const userCommand = command;
+    setCommand('');
+    addMessage({ type: 'user', content: userCommand });
+    
     setIsProcessing(true);
-    setStatusMessage('Understanding your request...');
+    addMessage({ type: 'system', content: 'Planning scenario...' });
 
     try {
-      const lowerCommand = command.toLowerCase();
+      const lowerCommand = userCommand.toLowerCase();
       
       let platform = 'web';
       if (lowerCommand.includes('spotify')) platform = 'spotify';
@@ -205,15 +219,13 @@ const Operator = () => {
       else if (lowerCommand.includes('soundcloud')) platform = 'soundcloud';
       else if (lowerCommand.includes('tiktok')) platform = 'tiktok';
       
-      const urlMatch = command.match(/https?:\/\/[^\s]+/);
+      const urlMatch = userCommand.match(/https?:\/\/[^\s]+/);
       const targetUrl = urlMatch ? urlMatch[0] : null;
       
-      const profileMatch = command.match(/(\d+)\s*(?:profiles?|accounts?|users?)/i);
-      const runMatch = command.match(/(\d+)\s*(?:times?|runs?|x)/i);
+      const profileMatch = userCommand.match(/(\d+)\s*(?:profiles?|accounts?|users?)/i);
+      const runMatch = userCommand.match(/(\d+)\s*(?:times?|runs?|x)/i);
       const profileCount = profileMatch ? parseInt(profileMatch[1]) : 3;
       const runCount = runMatch ? parseInt(runMatch[1]) : 1;
-
-      setStatusMessage('AI is planning the scenario...');
 
       const response = await fetch(
         `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/session-api/planner/execute`,
@@ -221,7 +233,7 @@ const Operator = () => {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            goal: command,
+            goal: userCommand,
             platform,
             input: targetUrl,
             model: selectedModel,
@@ -242,26 +254,69 @@ const Operator = () => {
         throw new Error(result.error || 'Planning failed');
       }
 
-      setStatusMessage('');
-      setCommand('');
+      // Remove "Planning..." message and add success
+      setChatMessages(prev => prev.filter(m => m.content !== 'Planning scenario...'));
+      addMessage({ 
+        type: 'success', 
+        content: `✓ Task started: ${result.sessions_created} sessions queued` 
+      });
+      
       refetchTasks();
       refetchSessions();
-      
-      toast({ 
-        title: 'Task started', 
-        description: `${result.sessions_created} sessions queued` 
-      });
 
     } catch (error) {
-      console.error('Task creation failed:', error);
-      setStatusMessage('');
+      setChatMessages(prev => prev.filter(m => m.content !== 'Planning scenario...'));
+      addMessage({ 
+        type: 'error', 
+        content: error instanceof Error ? error.message : 'Unknown error' 
+      });
       toast({ 
-        title: 'Planning failed', 
+        title: 'Failed', 
         description: error instanceof Error ? error.message : 'Unknown error',
         variant: 'destructive' 
       });
     } finally {
       setIsProcessing(false);
+    }
+  };
+
+  const requestScreenshot = async (sessionId: string) => {
+    setLoadingScreenshots(prev => new Set(prev).add(sessionId));
+    
+    try {
+      // Fetch latest session data
+      const { data: session } = await supabase
+        .from('sessions')
+        .select('last_screenshot_url, current_url, profiles(name)')
+        .eq('id', sessionId)
+        .single();
+      
+      if (session?.last_screenshot_url) {
+        addMessage({
+          type: 'screenshot',
+          content: `Screenshot from ${session.profiles?.name || 'Worker'}`,
+          sessionId,
+          imageUrl: session.last_screenshot_url,
+        });
+      } else {
+        addMessage({
+          type: 'system',
+          content: `No screenshot available for this session yet`,
+          sessionId,
+        });
+      }
+    } catch (error) {
+      addMessage({
+        type: 'error',
+        content: 'Failed to get screenshot',
+        sessionId,
+      });
+    } finally {
+      setLoadingScreenshots(prev => {
+        const next = new Set(prev);
+        next.delete(sessionId);
+        return next;
+      });
     }
   };
 
@@ -278,341 +333,282 @@ const Operator = () => {
         .eq('task_id', taskId)
         .in('status', ['queued', 'running', 'paused']);
       
+      addMessage({ type: 'system', content: 'Task stopped' });
       refetchTasks();
       refetchSessions();
-      toast({ title: 'Task stopped' });
     } catch {
       toast({ title: 'Failed to stop task', variant: 'destructive' });
     }
   };
 
   return (
-    <div className="min-h-screen bg-background flex flex-col overflow-x-hidden">
-      {/* Header - Fixed width, no overflow */}
-      <header className="sticky top-0 z-50 border-b border-border/40 bg-background/95 backdrop-blur-xl">
-        <div className="w-full max-w-[1400px] mx-auto px-4 h-14 flex items-center justify-between gap-4">
-          {/* Logo - Fixed width */}
-          <div className="flex items-center gap-2 flex-shrink-0">
-            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-primary to-accent flex items-center justify-center">
-              <Bot className="w-4 h-4 text-primary-foreground" />
+    <div className="h-screen bg-background flex flex-col overflow-hidden">
+      {/* Compact Header */}
+      <header className="flex-shrink-0 border-b border-border/40 bg-background/95 backdrop-blur-sm px-3 py-2">
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-primary to-primary/60 flex items-center justify-center">
+              <Bot className="w-3.5 h-3.5 text-primary-foreground" />
             </div>
-            <span className="font-semibold text-base sm:text-lg">Operator</span>
+            <span className="font-semibold text-sm">Operator</span>
           </div>
           
-          {/* Right Side - Flexible with overflow hidden */}
-          <div className="flex items-center gap-2 flex-shrink-0">
+          <div className="flex items-center gap-2">
             <OperatorBalanceHeader 
               selectedModel={selectedModel}
               onModelChange={setSelectedModel}
             />
-            <Separator orientation="vertical" className="h-6 hidden sm:block" />
-            <Button variant="ghost" size="sm" asChild className="gap-1.5 text-muted-foreground hover:text-foreground px-2 sm:px-3">
+            <Separator orientation="vertical" className="h-5" />
+            <Button variant="ghost" size="sm" asChild className="h-7 px-2 text-muted-foreground">
               <Link to="/dashboard">
-                <Code2 className="h-4 w-4" />
-                <span className="hidden sm:inline">Developer</span>
+                <Code2 className="h-3.5 w-3.5" />
               </Link>
             </Button>
           </div>
         </div>
       </header>
 
-      {/* System Status Banner */}
-      <div className="border-b border-border/30 bg-card/30">
-        <div className="w-full max-w-[1400px] mx-auto px-4 py-2">
-          <div className="flex items-center justify-between flex-wrap gap-2">
-            {/* System Status */}
-            <div className="flex items-center gap-4">
-              <div className="flex items-center gap-2">
-                {systemOnline ? (
-                  <>
-                    <div className="relative">
-                      <Wifi className="w-4 h-4 text-success" />
-                      <div className="absolute -top-0.5 -right-0.5 w-2 h-2 bg-success rounded-full animate-pulse" />
-                    </div>
-                    <span className="text-xs font-medium text-success">System Online</span>
-                  </>
-                ) : (
-                  <>
-                    <WifiOff className="w-4 h-4 text-destructive" />
-                    <span className="text-xs font-medium text-destructive">Offline</span>
-                  </>
-                )}
-              </div>
-              
-              {/* Workers Count */}
-              <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                <Server className="w-3.5 h-3.5" />
-                <span>{onlineRunners.length} worker{onlineRunners.length !== 1 ? 's' : ''}</span>
-              </div>
-            </div>
-
-            {/* Live Activity Indicators */}
-            <div className="flex items-center gap-3">
-              {totalRunning > 0 && (
-                <div className="flex items-center gap-1.5 px-2 py-1 rounded-full bg-primary/10 border border-primary/20">
-                  <div className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
-                  <span className="text-xs font-medium text-primary">{totalRunning} running</span>
-                </div>
-              )}
-              {totalQueued > 0 && (
-                <div className="flex items-center gap-1.5 px-2 py-1 rounded-full bg-muted/50 border border-border/50">
-                  <Clock className="w-3 h-3 text-muted-foreground" />
-                  <span className="text-xs text-muted-foreground">{totalQueued} queued</span>
-                </div>
-              )}
-              {totalRunning === 0 && totalQueued === 0 && (
-                <span className="text-xs text-muted-foreground">Idle</span>
-              )}
-            </div>
+      {/* Compact Stats Bar */}
+      <div className="flex-shrink-0 border-b border-border/30 bg-card/30 px-3 py-1.5">
+        <div className="flex items-center gap-3 text-[11px]">
+          {/* System Status */}
+          <div className="flex items-center gap-1.5">
+            {systemOnline ? (
+              <>
+                <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                <span className="text-emerald-500">Online</span>
+              </>
+            ) : (
+              <>
+                <WifiOff className="w-3 h-3 text-destructive" />
+                <span className="text-destructive">Offline</span>
+              </>
+            )}
+          </div>
+          
+          <Separator orientation="vertical" className="h-3" />
+          
+          {/* Quick Stats */}
+          <div className="flex items-center gap-3 text-muted-foreground">
+            <span className="flex items-center gap-1">
+              <Server className="w-3 h-3" />
+              {onlineRunners.length}
+            </span>
+            {totalRunning > 0 && (
+              <span className="flex items-center gap-1 text-primary">
+                <Zap className="w-3 h-3" />
+                {totalRunning}
+              </span>
+            )}
+            {totalQueued > 0 && (
+              <span className="flex items-center gap-1">
+                <Clock className="w-3 h-3" />
+                {totalQueued}
+              </span>
+            )}
+            <span className="flex items-center gap-1 text-emerald-500">
+              <CheckCircle2 className="w-3 h-3" />
+              {totalCompleted}
+            </span>
+            {totalFailed > 0 && (
+              <span className="flex items-center gap-1 text-destructive">
+                <XCircle className="w-3 h-3" />
+                {totalFailed}
+              </span>
+            )}
           </div>
         </div>
       </div>
 
-      {/* Main Content */}
-      <main className="flex-1 w-full max-w-[1400px] mx-auto px-4 py-6">
-        {/* Command Section */}
-        <div className="mb-6">
-          <Card className="overflow-hidden border-border/50 bg-card/50">
-            <CardContent className="p-0">
-              {/* Input Area */}
-              <div className="p-4">
-                <div className="flex items-start gap-3">
-                  <div className="w-9 h-9 rounded-full bg-gradient-to-br from-primary/20 to-accent/20 flex items-center justify-center flex-shrink-0">
-                    <Sparkles className="w-4 h-4 text-primary" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <Textarea
-                      value={command}
-                      onChange={(e) => setCommand(e.target.value)}
-                      placeholder="What needs to be done? Example: Play Spotify track with 5 profiles"
-                      className="min-h-[50px] resize-none border-0 bg-transparent focus-visible:ring-0 text-sm sm:text-base p-0 placeholder:text-muted-foreground/50"
-                      disabled={isProcessing}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) handleSubmit();
-                      }}
-                    />
-                    {statusMessage && (
-                      <p className="text-sm text-primary mt-2 flex items-center gap-2">
-                        <Loader2 className="w-3 h-3 animate-spin" />
-                        {statusMessage}
-                      </p>
-                    )}
-                  </div>
-                </div>
-              </div>
-              
-              {/* Action Bar */}
-              <div className="px-4 py-2.5 bg-muted/20 border-t border-border/30 flex items-center justify-between">
-                <span className="text-[10px] sm:text-xs text-muted-foreground/70">
-                  ⌘/Ctrl + Enter
+      {/* Chat Area - Main content */}
+      <div className="flex-1 flex flex-col min-h-0">
+        <ScrollArea className="flex-1" ref={scrollRef}>
+          <div className="p-3 space-y-3">
+            {/* Active Sessions as compact cards */}
+            {activeSessions.length > 0 && (
+              <div className="space-y-2">
+                <span className="text-[10px] uppercase tracking-wider text-muted-foreground/60 font-medium">
+                  Active Workers
                 </span>
-                <Button 
-                  onClick={handleSubmit} 
-                  disabled={isProcessing || !command.trim()}
-                  size="sm"
-                  className="gap-2"
-                >
-                  {isProcessing ? (
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                  ) : (
-                    <Send className="w-4 h-4" />
-                  )}
-                  <span className="hidden sm:inline">{isProcessing ? 'Planning...' : 'Run'}</span>
-                </Button>
+                <div className="flex flex-wrap gap-2">
+                  {activeSessions.map((session) => (
+                    <button
+                      key={session.id}
+                      onClick={() => requestScreenshot(session.id)}
+                      disabled={loadingScreenshots.has(session.id)}
+                      className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg bg-card/80 border border-border/50 hover:border-primary/50 hover:bg-card transition-all text-left group"
+                    >
+                      <div className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${
+                        session.status === 'running' ? 'bg-primary animate-pulse' :
+                        session.status === 'queued' ? 'bg-muted-foreground' :
+                        'bg-amber-500'
+                      }`} />
+                      <span className="text-xs font-medium truncate max-w-[100px]">
+                        {session.profiles?.name || session.id.slice(0, 6)}
+                      </span>
+                      <span className="text-[10px] text-muted-foreground">
+                        {session.current_step || 0}/{session.total_steps || '?'}
+                      </span>
+                      {loadingScreenshots.has(session.id) ? (
+                        <Loader2 className="w-3 h-3 animate-spin text-muted-foreground" />
+                      ) : (
+                        <Image className="w-3 h-3 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
+                      )}
+                    </button>
+                  ))}
+                </div>
               </div>
-            </CardContent>
-          </Card>
-        </div>
+            )}
 
-        {/* Stats Row */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
-          <Card className="bg-card/50 border-border/40">
-            <CardContent className="p-3 sm:p-4">
-              <div className="flex items-center gap-2 sm:gap-3">
-                <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0">
-                  <Zap className="w-4 h-4 sm:w-5 sm:h-5 text-primary" />
-                </div>
-                <div className="min-w-0">
-                  <div className="text-xl sm:text-2xl font-bold tabular-nums">{totalRunning}</div>
-                  <div className="text-[10px] sm:text-xs text-muted-foreground truncate">Running</div>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-          <Card className="bg-card/50 border-border/40">
-            <CardContent className="p-3 sm:p-4">
-              <div className="flex items-center gap-2 sm:gap-3">
-                <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-lg bg-accent/10 flex items-center justify-center flex-shrink-0">
-                  <Target className="w-4 h-4 sm:w-5 sm:h-5 text-accent" />
-                </div>
-                <div className="min-w-0">
-                  <div className="text-xl sm:text-2xl font-bold tabular-nums">{totalActive}</div>
-                  <div className="text-[10px] sm:text-xs text-muted-foreground truncate">Tasks</div>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-          <Card className="bg-card/50 border-border/40">
-            <CardContent className="p-3 sm:p-4">
-              <div className="flex items-center gap-2 sm:gap-3">
-                <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-lg bg-success/10 flex items-center justify-center flex-shrink-0">
-                  <TrendingUp className="w-4 h-4 sm:w-5 sm:h-5 text-success" />
-                </div>
-                <div className="min-w-0">
-                  <div className="text-xl sm:text-2xl font-bold tabular-nums">{totalCompleted}</div>
-                  <div className="text-[10px] sm:text-xs text-muted-foreground truncate">Done</div>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-          <Card className="bg-card/50 border-border/40">
-            <CardContent className="p-3 sm:p-4">
-              <div className="flex items-center gap-2 sm:gap-3">
-                <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-lg bg-destructive/10 flex items-center justify-center flex-shrink-0">
-                  <XCircle className="w-4 h-4 sm:w-5 sm:h-5 text-destructive" />
-                </div>
-                <div className="min-w-0">
-                  <div className="text-xl sm:text-2xl font-bold tabular-nums">{totalFailed}</div>
-                  <div className="text-[10px] sm:text-xs text-muted-foreground truncate">Failed</div>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* Main Grid: Tasks + Sessions */}
-        <div className="grid grid-cols-1 lg:grid-cols-5 gap-4 sm:gap-6">
-          {/* Tasks Column */}
-          <div className="lg:col-span-3 space-y-4">
-            <div className="flex items-center justify-between">
-              <h2 className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-                <Activity className="w-4 h-4" />
-                Active Tasks
-              </h2>
-              {activeTasks.length > 0 && (
-                <Badge variant="secondary" className="text-[10px]">
-                  {activeTasks.length}
-                </Badge>
-              )}
-            </div>
-
-            {activeTasks.length > 0 ? (
-              <div className="space-y-3">
+            {/* Active Tasks as compact items */}
+            {activeTasks.length > 0 && (
+              <div className="space-y-2">
+                <span className="text-[10px] uppercase tracking-wider text-muted-foreground/60 font-medium">
+                  Tasks
+                </span>
                 {activeTasks.map((task) => (
-                  <Card key={task.id} className="overflow-hidden bg-card/50 border-border/40">
-                    <CardContent className="p-3 sm:p-4">
-                      <div className="flex items-start justify-between gap-2 mb-3">
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2 mb-1">
-                            {task.status === 'active' ? (
-                              <div className="relative flex-shrink-0">
-                                <Activity className="w-4 h-4 text-primary" />
-                                <div className="absolute -top-0.5 -right-0.5 w-2 h-2 bg-primary rounded-full animate-pulse" />
-                              </div>
-                            ) : (
-                              <Clock className="w-4 h-4 text-muted-foreground flex-shrink-0" />
-                            )}
-                            <span className="font-medium text-sm truncate">{task.name}</span>
-                          </div>
-                          <div className="flex items-center gap-2 sm:gap-3 text-[10px] sm:text-xs text-muted-foreground flex-wrap">
-                            {task.sessionsRunning > 0 && (
-                              <span className="flex items-center gap-1 text-primary">
-                                <CircleDot className="w-3 h-3 animate-pulse" />
-                                {task.sessionsRunning}
-                              </span>
-                            )}
-                            <span className="flex items-center gap-1">
-                              <CheckCircle2 className="w-3 h-3 text-success" />
-                              {task.sessionsCompleted}
-                            </span>
-                            <span className="flex items-center gap-1">
-                              <XCircle className="w-3 h-3 text-destructive" />
-                              {task.sessionsFailed}
-                            </span>
-                            <span className="text-muted-foreground/60">/ {task.sessionsTotal}</span>
-                          </div>
-                        </div>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => handleStop(task.id)}
-                          className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive hover:bg-destructive/10 flex-shrink-0"
-                        >
-                          <Square className="w-3.5 h-3.5" />
-                        </Button>
-                      </div>
-                      
-                      <div className="space-y-1">
-                        <Progress value={task.progress} className="h-1.5" />
-                        <div className="flex items-center justify-between text-[10px] text-muted-foreground">
-                          <span>{task.progress}%</span>
-                          {task.startedAt && (
-                            <span>{new Date(task.startedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
-                          )}
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
+                  <div key={task.id} className="flex items-center gap-2 px-3 py-2 rounded-lg bg-card/60 border border-border/40">
+                    {task.sessionsRunning > 0 ? (
+                      <Activity className="w-3.5 h-3.5 text-primary animate-pulse flex-shrink-0" />
+                    ) : (
+                      <Clock className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" />
+                    )}
+                    <span className="text-xs font-medium truncate flex-1">{task.name}</span>
+                    <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
+                      <span>{task.progress}%</span>
+                      <span className="text-emerald-500">{task.sessionsCompleted}</span>
+                      <span>/</span>
+                      <span>{task.sessionsTotal}</span>
+                    </div>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => handleStop(task.id)}
+                      className="h-6 w-6 p-0 hover:bg-destructive/10 hover:text-destructive"
+                    >
+                      <Square className="w-3 h-3" />
+                    </Button>
+                  </div>
                 ))}
               </div>
-            ) : (
-              <Card className="bg-card/30 border-dashed border-border/40">
-                <CardContent className="py-10 text-center">
-                  <div className="w-10 h-10 rounded-full bg-muted/30 flex items-center justify-center mx-auto mb-3">
-                    <Target className="w-5 h-5 text-muted-foreground/50" />
+            )}
+
+            {/* Chat Messages */}
+            {chatMessages.map((msg) => (
+              <div key={msg.id} className={`flex gap-2 ${msg.type === 'user' ? 'justify-end' : 'justify-start'}`}>
+                {msg.type !== 'user' && (
+                  <div className={`w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 ${
+                    msg.type === 'error' ? 'bg-destructive/10' :
+                    msg.type === 'success' ? 'bg-emerald-500/10' :
+                    msg.type === 'screenshot' ? 'bg-primary/10' :
+                    'bg-muted/50'
+                  }`}>
+                    {msg.type === 'error' ? <XCircle className="w-3 h-3 text-destructive" /> :
+                     msg.type === 'success' ? <CheckCircle2 className="w-3 h-3 text-emerald-500" /> :
+                     msg.type === 'screenshot' ? <Image className="w-3 h-3 text-primary" /> :
+                     <Sparkles className="w-3 h-3 text-muted-foreground" />}
                   </div>
-                  <p className="text-sm text-muted-foreground">No active tasks</p>
-                  <p className="text-xs text-muted-foreground/50 mt-1">Describe what you need above</p>
-                </CardContent>
-              </Card>
+                )}
+                
+                <div className={`max-w-[85%] ${msg.type === 'user' ? 'order-first' : ''}`}>
+                  <div className={`px-3 py-2 rounded-2xl text-sm ${
+                    msg.type === 'user' ? 'bg-primary text-primary-foreground rounded-br-md' :
+                    msg.type === 'error' ? 'bg-destructive/10 text-destructive border border-destructive/20 rounded-bl-md' :
+                    msg.type === 'success' ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 rounded-bl-md' :
+                    'bg-card border border-border/50 rounded-bl-md'
+                  }`}>
+                    {msg.content}
+                  </div>
+                  
+                  {msg.imageUrl && (
+                    <div className="mt-2 rounded-lg overflow-hidden border border-border/50 max-w-[300px]">
+                      <img 
+                        src={msg.imageUrl} 
+                        alt="Session screenshot" 
+                        className="w-full h-auto"
+                        loading="lazy"
+                      />
+                      <div className="p-2 bg-card/80 flex items-center justify-between text-[10px] text-muted-foreground">
+                        <span>Session: {msg.sessionId?.slice(0, 8)}</span>
+                        <a 
+                          href={msg.imageUrl} 
+                          target="_blank" 
+                          rel="noopener noreferrer"
+                          className="hover:text-primary"
+                        >
+                          <ExternalLink className="w-3 h-3" />
+                        </a>
+                      </div>
+                    </div>
+                  )}
+                  
+                  <span className="text-[9px] text-muted-foreground/50 px-1 mt-0.5 block">
+                    {msg.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                  </span>
+                </div>
+                
+                {msg.type === 'user' && (
+                  <div className="w-6 h-6 rounded-full bg-primary/20 flex items-center justify-center flex-shrink-0">
+                    <User className="w-3 h-3 text-primary" />
+                  </div>
+                )}
+              </div>
+            ))}
+
+            {/* Empty state */}
+            {chatMessages.length === 0 && activeTasks.length === 0 && (
+              <div className="flex flex-col items-center justify-center py-12 text-center">
+                <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center mb-3">
+                  <Sparkles className="w-5 h-5 text-primary" />
+                </div>
+                <p className="text-sm text-muted-foreground">Describe what you need</p>
+                <p className="text-xs text-muted-foreground/50 mt-1">Example: Play Spotify track with 5 profiles</p>
+              </div>
             )}
           </div>
+        </ScrollArea>
 
-          {/* Sessions Column */}
-          <div className="lg:col-span-2 space-y-4">
-            <div className="flex items-center justify-between">
-              <h2 className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-                <MonitorPlay className="w-4 h-4" />
-                Workers
-              </h2>
-              {activeSessions.filter(s => s.status === 'running').length > 0 && (
-                <Badge variant="secondary" className="text-[10px] gap-1">
-                  <div className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
-                  {activeSessions.filter(s => s.status === 'running').length}
-                </Badge>
+        {/* Compact Input */}
+        <div className="flex-shrink-0 border-t border-border/40 bg-background p-2">
+          <div className="flex items-end gap-2">
+            <Textarea
+              value={command}
+              onChange={(e) => setCommand(e.target.value)}
+              placeholder="What needs to be done?"
+              className="min-h-[40px] max-h-[120px] resize-none border-border/50 bg-card/50 text-sm py-2.5 px-3 rounded-xl"
+              disabled={isProcessing}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) handleSubmit();
+              }}
+              rows={1}
+            />
+            <Button 
+              onClick={handleSubmit} 
+              disabled={isProcessing || !command.trim()}
+              size="sm"
+              className="h-10 w-10 rounded-xl p-0 flex-shrink-0"
+            >
+              {isProcessing ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <Send className="w-4 h-4" />
               )}
-            </div>
-
-            <Card className="bg-card/50 border-border/40">
-              <CardContent className="p-0">
-                <ScrollArea className="h-[350px] sm:h-[400px]">
-                  <div className="p-3">
-                    <ActiveSessionsList 
-                      sessions={activeSessions}
-                      onSessionClick={setSelectedSessionId}
-                      selectedSessionId={selectedSessionId || undefined}
-                    />
-                  </div>
-                </ScrollArea>
-              </CardContent>
-            </Card>
-
-            {/* Session Detail Panel */}
-            {selectedSession && (
-              <SessionDetailPanel 
-                session={selectedSession}
-                onClose={() => setSelectedSessionId(null)}
-                onRefresh={() => refetchSessions()}
-              />
-            )}
+            </Button>
+          </div>
+          <div className="flex items-center justify-between mt-1.5 px-1">
+            <span className="text-[9px] text-muted-foreground/50">⌘+Enter to send</span>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => { refetchTasks(); refetchSessions(); }}
+              className="h-5 text-[9px] text-muted-foreground/50 hover:text-muted-foreground px-1"
+            >
+              <RotateCw className="w-2.5 h-2.5 mr-1" />
+              Refresh
+            </Button>
           </div>
         </div>
-      </main>
-
-      {/* Footer */}
-      <footer className="py-3 text-center text-[10px] sm:text-xs text-muted-foreground/50 border-t border-border/20">
-        Auto-scheduling • Auto-retry • Captcha handling • Session recovery
-      </footer>
+      </div>
     </div>
   );
 };
