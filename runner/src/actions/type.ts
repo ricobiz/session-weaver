@@ -4,7 +4,7 @@
  */
 
 import { Page } from 'playwright';
-import { ActionHandler, ActionResult } from '../types';
+import { ActionContext, ScenarioStep } from '../types';
 import { log } from '../logger';
 import { humanType, humanClick, randomDelay } from '../stealth/human-behavior';
 import { TIMEOUTS, DELAYS } from '../config';
@@ -12,22 +12,19 @@ import { TIMEOUTS, DELAYS } from '../config';
 /**
  * Type text into an element with human-like behavior
  */
-export const typeAction: ActionHandler = async (
-  page: Page,
-  params: Record<string, unknown>
-): Promise<ActionResult> => {
-  const text = params.text as string;
-  const selector = params.selector as string | undefined;
-  const clearFirst = params.clear_first !== false; // Default: clear existing text
-  const pressEnter = params.press_enter === true;
-  const speed = (params.speed as 'slow' | 'normal' | 'fast') || 'normal';
+export const typeAction = async (
+  context: ActionContext,
+  step: ScenarioStep
+): Promise<void> => {
+  const { page } = context;
+  const text = step.text as string;
+  const selector = step.selector || step.target;
+  const clearFirst = true; // Default: clear existing text
+  const pressEnter = false;
+  const speed: 'slow' | 'normal' | 'fast' = 'normal';
 
   if (!text) {
-    return {
-      success: false,
-      message: 'No text provided',
-      screenshot: null,
-    };
+    throw new Error('No text provided for type action');
   }
 
   const startTime = Date.now();
@@ -40,16 +37,12 @@ export const typeAction: ActionHandler = async (
       
       try {
         const element = await page.waitForSelector(selector, { 
-          timeout: TIMEOUTS.ELEMENT_WAIT,
+          timeout: TIMEOUTS.ELEMENT_VISIBLE,
           state: 'visible'
         });
         
         if (!element) {
-          return {
-            success: false,
-            message: `Element not found: ${selector}`,
-            screenshot: null,
-          };
+          throw new Error(`Element not found: ${selector}`);
         }
 
         // Get element position for human-like click
@@ -64,7 +57,7 @@ export const typeAction: ActionHandler = async (
         }
 
         // Small pause after clicking before typing
-        await randomDelay(DELAYS.HUMAN_PAUSE_MIN, DELAYS.HUMAN_PAUSE_MAX);
+        await randomDelay(DELAYS.MIN_BEFORE_CLICK, DELAYS.MAX_BEFORE_CLICK);
 
         // Clear existing text if requested
         if (clearFirst) {
@@ -74,7 +67,7 @@ export const typeAction: ActionHandler = async (
           await randomDelay(50, 100);
         }
       } catch (error) {
-        log('warn', `[type] Could not focus element, trying direct typing: ${error}`);
+        log('warning', `[type] Could not focus element, trying direct typing: ${error}`);
       }
     }
 
@@ -96,30 +89,9 @@ export const typeAction: ActionHandler = async (
     const avgSpeed = text.length / (duration / 1000);
 
     log('success', `[type] Typed ${text.length} chars in ${duration}ms (~${avgSpeed.toFixed(1)} chars/sec)`);
-
-    // Take screenshot of result
-    const screenshot = await page.screenshot({ type: 'png' });
-
-    return {
-      success: true,
-      message: `Typed ${text.length} characters`,
-      screenshot: screenshot.toString('base64'),
-      data: {
-        text_length: text.length,
-        duration_ms: duration,
-        chars_per_second: avgSpeed,
-        speed_setting: speed,
-        pressed_enter: pressEnter,
-      },
-    };
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
     log('error', `[type] Failed: ${errorMessage}`);
-
-    return {
-      success: false,
-      message: `Type failed: ${errorMessage}`,
-      screenshot: null,
-    };
+    throw error;
   }
 };
