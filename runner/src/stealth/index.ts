@@ -135,6 +135,93 @@ function getStealthScript(fingerprint?: Fingerprint): string {
       } catch(e) {}
     }
     
+    // ========== PHANTOM PROPERTIES (COMPREHENSIVE) ==========
+    // Delete all known PhantomJS properties
+    const phantomProps = [
+      'callPhantom', '_phantom', 'phantom', '__phantomas',
+      'Buffer', 'emit', 'spawn', 'webdriver'
+    ];
+    
+    for (const prop of phantomProps) {
+      try {
+        if (window[prop] !== undefined) {
+          delete window[prop];
+        }
+      } catch(e) {}
+    }
+    
+    // Override window.callPhantom specifically
+    Object.defineProperty(window, 'callPhantom', {
+      get: () => undefined,
+      set: () => {},
+      configurable: false
+    });
+    Object.defineProperty(window, '_phantom', {
+      get: () => undefined,
+      set: () => {},
+      configurable: false
+    });
+    Object.defineProperty(window, 'phantom', {
+      get: () => undefined,
+      set: () => {},
+      configurable: false
+    });
+    
+    // ========== SELENIUM DRIVER DETECTION ==========
+    // Remove all Selenium-related document properties
+    const seleniumDocProps = [
+      '__webdriver_script_fn', '__webdriver_script_func',
+      '__webdriver_script_function', '__driver_evaluate',
+      '__webdriver_evaluate', '__selenium_evaluate',
+      '__fxdriver_evaluate', '__driver_unwrapped',
+      '__webdriver_unwrapped', '__selenium_unwrapped',
+      '__fxdriver_unwrapped', 'selenium', 'webdriver',
+      'driver', '$cdc_asdjflasutopfhvcZLmcfl_'
+    ];
+    
+    for (const prop of seleniumDocProps) {
+      try {
+        if (document[prop] !== undefined) delete document[prop];
+        Object.defineProperty(document, prop, { get: () => undefined, configurable: true });
+      } catch(e) {}
+    }
+    
+    // Override document.$cdc patterns (Chrome DevTools detection)
+    const cdcPattern = /\\$cdc_|\\$chrome_/;
+    const docKeys = Object.keys(document);
+    for (const key of docKeys) {
+      if (cdcPattern.test(key)) {
+        try { delete document[key]; } catch(e) {}
+      }
+    }
+    
+    // Clean window for $cdc patterns
+    const winKeys = Object.keys(window);
+    for (const key of winKeys) {
+      if (cdcPattern.test(key)) {
+        try { delete window[key]; } catch(e) {}
+      }
+    }
+    
+    // Override document.getElementsByName to hide selenium markers
+    const origGetElementsByName = document.getElementsByName;
+    document.getElementsByName = function(name) {
+      if (name && (name.includes('selenium') || name.includes('webdriver'))) {
+        return document.createDocumentFragment().childNodes;
+      }
+      return origGetElementsByName.call(this, name);
+    };
+    
+    // Override document.evaluate for XPath-based selenium detection
+    const origEvaluate = document.evaluate;
+    document.evaluate = function(expression, contextNode, resolver, type, result) {
+      if (expression && typeof expression === 'string' && 
+          (expression.includes('selenium') || expression.includes('webdriver') || expression.includes('driver'))) {
+        return null;
+      }
+      return origEvaluate.call(this, expression, contextNode, resolver, type, result);
+    };
+    
     // ========== CHROME OBJECT ==========
     if (!window.chrome) {
       window.chrome = {};
