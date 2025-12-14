@@ -468,3 +468,142 @@ export function subscribeToTasks(callback: (payload: any) => void) {
     )
     .subscribe();
 }
+
+// ============================================
+// AI Model Optimizer API
+// ============================================
+
+export interface ModelConfig {
+  id: string;
+  task_type: string;
+  primary_model: string;
+  fallback_model: string | null;
+  max_price_per_million_input: number | null;
+  required_capabilities: string[];
+  auto_update: boolean;
+  last_checked_at: string | null;
+  last_updated_at: string;
+  notes: string | null;
+}
+
+export interface ModelCacheEntry {
+  id: string;
+  name: string;
+  pricing_input: number;
+  pricing_output: number;
+  context_length: number;
+  capabilities: string[];
+  is_free: boolean;
+}
+
+export interface OptimizationResult {
+  success: boolean;
+  action: string;
+  models_cached: number;
+  recommendations: Array<{
+    task_type: string;
+    current_primary: string;
+    recommended_primary: string | null;
+    recommended_fallback: string | null;
+    price_savings: string;
+    updated: boolean;
+  }>;
+  top_vision_models: Array<{
+    id: string;
+    price_input: string;
+    price_output: string;
+  }>;
+  message: string;
+  error?: string;
+}
+
+// Check current model recommendations
+export async function checkModelOptimization(): Promise<OptimizationResult | null> {
+  try {
+    const response = await fetch(
+      `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/ai-model-optimizer?action=check`,
+      {
+        headers: {
+          'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+        },
+      }
+    );
+
+    if (!response.ok) throw new Error('Failed to check optimization');
+    return await response.json();
+  } catch (error) {
+    console.error('Error checking model optimization:', error);
+    return null;
+  }
+}
+
+// Apply model optimizations
+export async function applyModelOptimization(): Promise<OptimizationResult | null> {
+  try {
+    const response = await fetch(
+      `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/ai-model-optimizer?action=optimize`,
+      {
+        headers: {
+          'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+        },
+      }
+    );
+
+    if (!response.ok) throw new Error('Failed to apply optimization');
+    return await response.json();
+  } catch (error) {
+    console.error('Error applying model optimization:', error);
+    return null;
+  }
+}
+
+// Fetch model configurations
+export async function fetchModelConfigs(): Promise<ModelConfig[]> {
+  const { data, error } = await supabase
+    .from('ai_model_config')
+    .select('*')
+    .order('task_type');
+
+  if (error) {
+    console.error('Error fetching model configs:', error);
+    return [];
+  }
+  return data || [];
+}
+
+// Update model configuration
+export async function updateModelConfig(
+  taskType: string,
+  updates: Partial<Pick<ModelConfig, 'primary_model' | 'fallback_model' | 'max_price_per_million_input' | 'auto_update'>>
+): Promise<boolean> {
+  const { error } = await supabase
+    .from('ai_model_config')
+    .update({ ...updates, last_updated_at: new Date().toISOString() })
+    .eq('task_type', taskType);
+
+  if (error) {
+    console.error('Error updating model config:', error);
+    return false;
+  }
+  return true;
+}
+
+// Fetch cached models
+export async function fetchModelCache(capabilities?: string[]): Promise<ModelCacheEntry[]> {
+  let query = supabase
+    .from('ai_model_cache')
+    .select('*')
+    .order('pricing_input', { ascending: true });
+
+  if (capabilities && capabilities.length > 0) {
+    query = query.contains('capabilities', capabilities);
+  }
+
+  const { data, error } = await query.limit(100);
+
+  if (error) {
+    console.error('Error fetching model cache:', error);
+    return [];
+  }
+  return data || [];
+}
