@@ -19,6 +19,13 @@ import {
   User
 } from 'lucide-react';
 
+interface VisualDetectionInfo {
+  used: boolean;
+  coordinates?: { x: number; y: number };
+  confidence?: number;
+  element_type?: string;
+}
+
 interface LiveSessionViewProps {
   session: {
     id: string;
@@ -36,6 +43,8 @@ interface LiveSessionViewProps {
     is_resumable?: boolean;
     profiles?: { name: string } | null;
     scenarios?: { name: string } | null;
+    // Visual detection info from logs
+    visual_detection?: VisualDetectionInfo;
   };
   onPause?: () => void;
   onResume?: () => void;
@@ -182,15 +191,52 @@ export function LiveSessionView({ session, onPause, onResume, onRetry }: LiveSes
           </div>
         )}
 
-        {/* Screenshot Placeholder */}
+        {/* Visual Detection Indicator */}
+        {session.visual_detection?.used && (
+          <div className="p-2 rounded bg-primary/10 border border-primary/20">
+            <div className="flex items-center gap-2 text-xs">
+              <Eye className="w-4 h-4 text-primary" />
+              <span className="font-medium text-primary">Visual element detection used</span>
+              {session.visual_detection.confidence && (
+                <Badge variant="outline" className="text-[10px] ml-auto">
+                  {Math.round(session.visual_detection.confidence * 100)}% confidence
+                </Badge>
+              )}
+            </div>
+            {session.visual_detection.coordinates && (
+              <p className="text-[10px] text-muted-foreground mt-1">
+                Clicked at ({session.visual_detection.coordinates.x}, {session.visual_detection.coordinates.y})
+                {session.visual_detection.element_type && ` • ${session.visual_detection.element_type}`}
+              </p>
+            )}
+          </div>
+        )}
+
+        {/* Screenshot with Visual Marker */}
         {showScreenshot && (
-          <div className="rounded border border-border bg-muted/20 aspect-video flex items-center justify-center">
+          <div className="rounded border border-border bg-muted/20 aspect-video flex items-center justify-center relative">
             {session.last_screenshot_url ? (
-              <img 
-                src={session.last_screenshot_url} 
-                alt="Session screenshot" 
-                className="w-full h-full object-contain rounded"
-              />
+              <>
+                <img 
+                  src={session.last_screenshot_url} 
+                  alt="Session screenshot" 
+                  className="w-full h-full object-contain rounded"
+                />
+                {/* Visual detection marker overlay */}
+                {session.visual_detection?.used && session.visual_detection.coordinates && (
+                  <div 
+                    className="absolute pointer-events-none"
+                    style={{
+                      left: `${(session.visual_detection.coordinates.x / 1280) * 100}%`,
+                      top: `${(session.visual_detection.coordinates.y / 720) * 100}%`,
+                      transform: 'translate(-50%, -50%)',
+                    }}
+                  >
+                    <div className="w-6 h-6 rounded-full border-2 border-primary bg-primary/20 animate-pulse" />
+                    <div className="w-2 h-2 rounded-full bg-primary absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2" />
+                  </div>
+                )}
+              </>
             ) : (
               <div className="text-center text-muted-foreground">
                 <Eye className="w-6 h-6 mx-auto mb-1 opacity-50" />

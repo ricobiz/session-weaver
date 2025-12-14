@@ -1,159 +1,198 @@
 import { ActionHandler } from '../types';
 
+const VISION_API_TIMEOUT = 15000;
+
 /**
- * Click action
- * Clicks on an element specified by selector OR visual description
+ * Click action with automatic visual fallback
  * 
- * Supports:
- * - CSS selector: { selector: ".play-button" }
- * - Visual description: { visual: "green play button" }
- * - Coordinates: { x: 123, y: 456 }
+ * Execution flow (invisible to operator):
+ * 1. Try CSS selector
+ * 2. If fails, automatically use vision-based detection
+ * 3. Log fallback usage for observability
  */
 export const clickAction: ActionHandler = async (context, step) => {
   const { page, log, session } = context;
   const selector = step.selector || step.target;
-  const visual = (step as any).visual;
-  const coordinates = (step as any).x !== undefined && (step as any).y !== undefined;
 
-  // Human-like delay before click
-  await new Promise(resolve => setTimeout(resolve, 200 + Math.random() * 300));
-
-  // Case 1: Direct coordinates provided
-  if (coordinates) {
-    const x = (step as any).x;
-    const y = (step as any).y;
-    log('info', `Clicking coordinates: (${x}, ${y})`);
-    await page.mouse.click(x, y);
-    await page.waitForLoadState('networkidle', { timeout: 5000 }).catch(() => {});
-    log('success', `Clicked at (${x}, ${y})`);
-    return;
+  if (!selector) {
+    throw new Error('Click action requires a selector or target');
   }
 
-  // Case 2: Visual description - use AI vision
-  if (visual) {
-    log('info', `Finding element visually: "${visual}"`);
-    
-    // Take screenshot
+  // Human-like delay before interaction
+  await new Promise(resolve => setTimeout(resolve, 200 + Math.random() * 300));
+
+  // Phase 1: Try standard selector
+  try {
+    const element = await page.waitForSelector(selector, {
+      state: 'visible',
+      timeout: 5000,
+    });
+
+    if (element) {
+      await element.click();
+      await page.waitForLoadState('networkidle', { timeout: 5000 }).catch(() => {});
+      log('success', `Clicked: ${selector}`);
+      return;
+    }
+  } catch (selectorError) {
+    log('warning', `Selector failed: ${selector}, attempting visual fallback...`, {
+      error: selectorError instanceof Error ? selectorError.message : 'Unknown'
+    });
+  }
+
+  // Phase 2: Automatic visual fallback
+  log('info', 'Using visual element detection (automatic fallback)');
+  
+  try {
+    // Take screenshot for vision analysis
     const screenshot = await page.screenshot({ type: 'png' });
     const base64 = screenshot.toString('base64');
+    const viewportSize = page.viewportSize() || { width: 1280, height: 720 };
+
+    // Build visual description from selector
+    const visualDescription = buildVisualDescription(selector);
 
     // Call vision API
     const apiUrl = process.env.API_BASE_URL || 'http://localhost:54321/functions/v1/session-api';
+    
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), VISION_API_TIMEOUT);
+
     const response = await fetch(`${apiUrl}/vision/find-element`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         screenshot: base64,
-        description: visual,
-        multiple: false,
+        description: visualDescription,
+        viewport: viewportSize,
+        context: {
+          original_selector: selector,
+          page_url: page.url(),
+        }
       }),
+      signal: controller.signal,
     });
 
+    clearTimeout(timeout);
+
     if (!response.ok) {
-      throw new Error(`Vision API failed: ${response.status}`);
+      throw new Error(`Vision API returned ${response.status}`);
     }
 
     const result = await response.json();
-    
+
     if (!result.found) {
-      throw new Error(`Element not found visually: "${visual}"`);
+      throw new Error(`Element not found by selector or vision: "${selector}"`);
     }
 
-    log('info', `Found element at (${result.x}, ${result.y}) - ${result.element_type || 'unknown'}: ${result.label || visual}`);
-    
-    // Click at found coordinates
+    // Log visual fallback usage (visible in session timeline)
+    log('info', 'Visual fallback used', {
+      visual_detection: true,
+      coordinates: { x: result.x, y: result.y },
+      confidence: result.confidence,
+      element_type: result.element_type,
+      detected_label: result.label,
+      original_selector: selector,
+      screenshot_taken: true,
+    });
+
+    // Click at detected coordinates
     await page.mouse.click(result.x, result.y);
     await page.waitForLoadState('networkidle', { timeout: 5000 }).catch(() => {});
-    log('success', `Clicked visually found element: "${visual}"`);
-    return;
+    
+    log('success', `Clicked via visual detection at (${result.x}, ${result.y})`);
+
+  } catch (visionError) {
+    log('error', 'Visual fallback failed', {
+      error: visionError instanceof Error ? visionError.message : 'Unknown',
+      original_selector: selector,
+    });
+    throw new Error(`Click failed - selector and visual detection both failed for: ${selector}`);
   }
-
-  // Case 3: CSS selector (original behavior)
-  if (!selector) {
-    throw new Error('Click action requires selector, visual description, or coordinates');
-  }
-
-  log('info', `Clicking: ${selector}`);
-
-  // Wait for element to be visible
-  const element = await page.waitForSelector(selector, {
-    state: 'visible',
-    timeout: 10000,
-  });
-
-  if (!element) {
-    throw new Error(`Element not found: ${selector}`);
-  }
-
-  await element.click();
-
-  // Wait for any navigation or network activity
-  await page.waitForLoadState('networkidle', { timeout: 5000 }).catch(() => {});
-
-  log('success', `Clicked: ${selector}`);
 };
 
 /**
- * Smart click - tries selector first, falls back to visual detection
+ * Build a visual description from a CSS selector
+ * Converts technical selectors into natural language for vision AI
  */
-export const smartClickAction: ActionHandler = async (context, step) => {
-  const { page, log } = context;
-  const selector = step.selector || step.target;
-  const visual = (step as any).visual || (step as any).fallback_visual;
+function buildVisualDescription(selector: string): string {
+  const descriptions: string[] = [];
 
-  // Try selector first
-  if (selector) {
-    try {
-      const element = await page.waitForSelector(selector, {
-        state: 'visible',
-        timeout: 3000,
-      });
+  // Extract element type
+  const tagMatch = selector.match(/^(\w+)/);
+  if (tagMatch) {
+    const tag = tagMatch[1].toLowerCase();
+    const tagNames: Record<string, string> = {
+      'button': 'button',
+      'a': 'link',
+      'input': 'input field',
+      'img': 'image',
+      'svg': 'icon',
+      'span': 'text element',
+      'div': 'container',
+      'video': 'video player',
+      'audio': 'audio player',
+    };
+    if (tagNames[tag]) descriptions.push(tagNames[tag]);
+  }
+
+  // Extract class names for context
+  const classMatches = selector.match(/\.([a-zA-Z0-9_-]+)/g);
+  if (classMatches) {
+    for (const cls of classMatches) {
+      const className = cls.substring(1).toLowerCase();
       
-      if (element) {
-        await new Promise(resolve => setTimeout(resolve, 200 + Math.random() * 300));
-        await element.click();
-        await page.waitForLoadState('networkidle', { timeout: 5000 }).catch(() => {});
-        log('success', `Smart click: selector worked - ${selector}`);
-        return;
-      }
-    } catch {
-      log('warning', `Selector failed: ${selector}, trying visual detection...`);
+      // Map common class patterns to visual descriptions
+      if (className.includes('play')) descriptions.push('play button');
+      else if (className.includes('pause')) descriptions.push('pause button');
+      else if (className.includes('like') || className.includes('heart') || className.includes('favorite')) descriptions.push('like or heart button');
+      else if (className.includes('share')) descriptions.push('share button');
+      else if (className.includes('comment')) descriptions.push('comment button');
+      else if (className.includes('subscribe') || className.includes('follow')) descriptions.push('subscribe or follow button');
+      else if (className.includes('search')) descriptions.push('search button or field');
+      else if (className.includes('close') || className.includes('dismiss')) descriptions.push('close button (X)');
+      else if (className.includes('next') || className.includes('forward')) descriptions.push('next or forward button');
+      else if (className.includes('prev') || className.includes('back')) descriptions.push('previous or back button');
+      else if (className.includes('menu') || className.includes('hamburger')) descriptions.push('menu button');
+      else if (className.includes('settings') || className.includes('gear') || className.includes('cog')) descriptions.push('settings button');
+      else if (className.includes('volume') || className.includes('mute')) descriptions.push('volume or mute button');
+      else if (className.includes('fullscreen')) descriptions.push('fullscreen button');
+      else if (className.includes('download')) descriptions.push('download button');
+      else if (className.includes('upload')) descriptions.push('upload button');
+      else if (className.includes('submit') || className.includes('send')) descriptions.push('submit or send button');
+      else if (className.includes('cancel')) descriptions.push('cancel button');
+      else if (className.includes('confirm') || className.includes('ok') || className.includes('accept')) descriptions.push('confirm or OK button');
     }
   }
 
-  // Fallback to visual detection
-  if (visual) {
-    log('info', `Smart click: using visual detection for "${visual}"`);
-    
-    const screenshot = await page.screenshot({ type: 'png' });
-    const base64 = screenshot.toString('base64');
-
-    const apiUrl = process.env.API_BASE_URL || 'http://localhost:54321/functions/v1/session-api';
-    const response = await fetch(`${apiUrl}/vision/find-element`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        screenshot: base64,
-        description: visual,
-        multiple: false,
-      }),
-    });
-
-    if (!response.ok) {
-      throw new Error(`Vision API failed: ${response.status}`);
-    }
-
-    const result = await response.json();
-    
-    if (!result.found) {
-      throw new Error(`Element not found by selector "${selector}" or visually "${visual}"`);
-    }
-
-    await page.mouse.click(result.x, result.y);
-    await page.waitForLoadState('networkidle', { timeout: 5000 }).catch(() => {});
-    log('success', `Smart click: visual detection succeeded at (${result.x}, ${result.y})`);
-    return;
+  // Extract aria-label or data attributes
+  const ariaMatch = selector.match(/\[aria-label=["']([^"']+)["']\]/);
+  if (ariaMatch) {
+    descriptions.push(`element labeled "${ariaMatch[1]}"`);
   }
 
-  throw new Error('Smart click failed: no selector or visual description provided');
-};
+  const titleMatch = selector.match(/\[title=["']([^"']+)["']\]/);
+  if (titleMatch) {
+    descriptions.push(`element with title "${titleMatch[1]}"`);
+  }
+
+  // Extract text content hint
+  const textMatch = selector.match(/:contains\(["']([^"']+)["']\)/);
+  if (textMatch) {
+    descriptions.push(`element containing text "${textMatch[1]}"`);
+  }
+
+  // Build final description
+  if (descriptions.length === 0) {
+    // Fallback: use sanitized selector as description
+    return `clickable element matching: ${selector.replace(/[^\w\s-]/g, ' ').trim()}`;
+  }
+
+  return descriptions.join(', ');
+}
+
+/**
+ * Smart click - same as click but exported for compatibility
+ * Vision fallback is now automatic in all click actions
+ */
+export const smartClickAction = clickAction;
