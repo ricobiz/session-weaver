@@ -5,7 +5,7 @@ import { ApiClient } from './api';
 import { SessionExecutor, ExecutorConfig } from './executor';
 import { log, setLogLevel } from './logger';
 import { HealthReporter } from './health';
-
+import { startHttpApi } from './http-api';
 // Configuration from environment
 const config: RunnerConfig = {
   apiBaseUrl: process.env.API_BASE_URL || '',
@@ -114,10 +114,15 @@ async function main(): Promise<void> {
   log('info', `Step Retry Limit: ${config.stepRetryLimit}`);
   log('info', `Session Retry Limit: ${config.sessionRetryLimit}`);
   log('info', '═══════════════════════════════════════════════════');
-  log('info', 'Starting job polling...');
+
+  // Start HTTP API for direct testing
+  const httpPort = parseInt(process.env.HTTP_API_PORT || '3001', 10);
+  startHttpApi(httpPort);
 
   // Start health reporter
   healthReporter.start();
+
+  log('info', 'Starting job polling...');
 
   // Start polling loop
   const poll = async () => {
