@@ -56,8 +56,14 @@ export function OperatorBalanceHeader({ selectedModel, onModelChange }: Operator
         compact 
       />
 
-      {/* Balance Display */}
-      <div className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-muted/50">
+      {/* Balance Display - Clickable to OpenRouter */}
+      <a 
+        href="https://openrouter.ai/credits"
+        target="_blank"
+        rel="noopener noreferrer"
+        className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-muted/50 hover:bg-muted transition-colors cursor-pointer"
+        title="Top up OpenRouter credits"
+      >
         <Wallet className={`w-3.5 h-3.5 ${isLow ? 'text-destructive' : 'text-primary'}`} />
         {isLoading ? (
           <RefreshCw className="w-3 h-3 animate-spin text-muted-foreground" />
@@ -71,7 +77,7 @@ export function OperatorBalanceHeader({ selectedModel, onModelChange }: Operator
         ) : (
           <span className="text-xs text-muted-foreground">--</span>
         )}
-      </div>
+      </a>
     </div>
   );
 }
