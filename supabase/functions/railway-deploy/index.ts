@@ -266,7 +266,14 @@ Deno.serve(async (req) => {
         serviceId = existingService.node.id;
         console.log('Using existing service:', serviceId);
       } else {
-        // Create service from GitHub repo
+      // Create service from GitHub repo
+        // Railway expects format "owner/repo", not full URL
+        let repoPath = repoUrl;
+        if (repoUrl.includes('github.com/')) {
+          repoPath = repoUrl.replace(/^https?:\/\/github\.com\//, '').replace(/\.git$/, '');
+        }
+        console.log('Using repo path:', repoPath);
+        
         const serviceResult = await railwayQuery(RAILWAY_API_TOKEN, `
           mutation($input: ServiceCreateInput!) {
             serviceCreate(input: $input) {
@@ -279,7 +286,7 @@ Deno.serve(async (req) => {
             projectId,
             name: 'runner',
             source: {
-              repo: repoUrl,
+              repo: repoPath,
             }
           }
         });
