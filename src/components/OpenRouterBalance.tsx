@@ -67,7 +67,8 @@ export function OpenRouterBalance({
     return () => clearInterval(interval);
   }, [fetchBalance, refreshInterval]);
 
-  const formatCredits = (value: number) => {
+  const formatCredits = (value: number | undefined | null) => {
+    if (value === undefined || value === null || isNaN(value)) return '0.0000';
     return value.toFixed(4);
   };
 
