@@ -1508,6 +1508,223 @@ Analyze this failure and provide debugging insights.`;
       });
     }
 
+    // POST /vision/find-element - Find element coordinates using AI vision
+    if (req.method === 'POST' && path === '/vision/find-element') {
+      const body = await req.json();
+      const { screenshot, description, multiple } = body;
+
+      if (!screenshot || !description) {
+        return new Response(JSON.stringify({ 
+          error: 'screenshot (base64) and description are required' 
+        }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
+      if (!LOVABLE_API_KEY) {
+        return new Response(JSON.stringify({ error: 'AI not configured' }), {
+          status: 500,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      console.log('[session-api] Vision find-element request:', description);
+
+      const systemPrompt = `You are a visual element detector for browser automation.
+Your task is to find clickable elements on a webpage screenshot based on a description.
+
+IMPORTANT RULES:
+1. Return ONLY valid JSON, no explanations
+2. Coordinates must be PIXEL positions (x, y) relative to top-left corner
+3. If element is not found, return {"found": false}
+4. If element is found, return coordinates of the CENTER of the element
+5. Consider buttons, links, icons, text labels, images as clickable elements
+6. Look for visual cues: button styles, underlines, icons, hover states
+
+Response format for single element:
+{"found": true, "x": 123, "y": 456, "confidence": 0.95, "element_type": "button", "label": "Play"}
+
+Response format for multiple elements:
+{"found": true, "elements": [{"x": 123, "y": 456, "confidence": 0.9, "label": "First"}, ...]}`;
+
+      const userPrompt = multiple 
+        ? `Find ALL elements matching: "${description}". Return coordinates for each one.`
+        : `Find the element: "${description}". Return its center coordinates.`;
+
+      try {
+        const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${LOVABLE_API_KEY}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            model: 'google/gemini-2.5-flash',
+            messages: [
+              { role: 'system', content: systemPrompt },
+              { 
+                role: 'user', 
+                content: [
+                  { type: 'text', text: userPrompt },
+                  { 
+                    type: 'image_url', 
+                    image_url: { 
+                      url: screenshot.startsWith('data:') ? screenshot : `data:image/png;base64,${screenshot}`
+                    } 
+                  }
+                ]
+              }
+            ],
+          }),
+        });
+
+        if (!response.ok) {
+          const errText = await response.text();
+          console.error('[session-api] Vision API error:', errText);
+          return new Response(JSON.stringify({ error: 'Vision API failed', details: errText }), {
+            status: 500,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
+
+        const aiResult = await response.json();
+        const content = aiResult.choices?.[0]?.message?.content || '';
+        
+        // Parse JSON from response
+        let parsed;
+        try {
+          // Extract JSON from markdown code blocks if present
+          const jsonMatch = content.match(/```(?:json)?\s*([\s\S]*?)```/) || [null, content];
+          parsed = JSON.parse(jsonMatch[1].trim());
+        } catch {
+          console.error('[session-api] Failed to parse vision response:', content);
+          return new Response(JSON.stringify({ 
+            found: false, 
+            error: 'Failed to parse AI response',
+            raw: content 
+          }), {
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
+
+        console.log('[session-api] Vision result:', parsed);
+        return new Response(JSON.stringify(parsed), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+
+      } catch (error) {
+        console.error('[session-api] Vision error:', error);
+        return new Response(JSON.stringify({ 
+          found: false, 
+          error: error instanceof Error ? error.message : 'Vision failed' 
+        }), {
+          status: 500,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+    }
+
+    // POST /vision/analyze-page - Analyze page for automation opportunities
+    if (req.method === 'POST' && path === '/vision/analyze-page') {
+      const body = await req.json();
+      const { screenshot, task } = body;
+
+      if (!screenshot) {
+        return new Response(JSON.stringify({ error: 'screenshot required' }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
+      if (!LOVABLE_API_KEY) {
+        return new Response(JSON.stringify({ error: 'AI not configured' }), {
+          status: 500,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      const systemPrompt = `You are a browser automation analyst. Analyze screenshots to identify:
+1. Current page state (what page is this, what's visible)
+2. Clickable elements with their approximate coordinates
+3. Recommended next action based on the task
+
+Return JSON:
+{
+  "page_type": "search_results|player|login|error|other",
+  "page_state": "description of current state",
+  "elements": [
+    {"type": "button|link|input|icon", "label": "text", "x": 123, "y": 456, "action": "click|type|scroll"}
+  ],
+  "recommended_action": {"action": "click|type|wait|scroll", "target": "element label or coordinates", "reason": "why"}
+}`;
+
+      try {
+        const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${LOVABLE_API_KEY}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            model: 'google/gemini-2.5-flash',
+            messages: [
+              { role: 'system', content: systemPrompt },
+              { 
+                role: 'user', 
+                content: [
+                  { type: 'text', text: task ? `Task: ${task}. Analyze this page and suggest next action.` : 'Analyze this page and identify all interactive elements.' },
+                  { 
+                    type: 'image_url', 
+                    image_url: { 
+                      url: screenshot.startsWith('data:') ? screenshot : `data:image/png;base64,${screenshot}`
+                    } 
+                  }
+                ]
+              }
+            ],
+          }),
+        });
+
+        if (!response.ok) {
+          return new Response(JSON.stringify({ error: 'Vision API failed' }), {
+            status: 500,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
+
+        const aiResult = await response.json();
+        const content = aiResult.choices?.[0]?.message?.content || '';
+        
+        let parsed;
+        try {
+          const jsonMatch = content.match(/```(?:json)?\s*([\s\S]*?)```/) || [null, content];
+          parsed = JSON.parse(jsonMatch[1].trim());
+        } catch {
+          return new Response(JSON.stringify({ 
+            error: 'Failed to parse response',
+            raw: content 
+          }), {
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
+
+        return new Response(JSON.stringify(parsed), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+
+      } catch (error) {
+        return new Response(JSON.stringify({ 
+          error: error instanceof Error ? error.message : 'Analysis failed' 
+        }), {
+          status: 500,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+    }
+
     return new Response(JSON.stringify({ error: 'Not found' }), {
       status: 404,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },

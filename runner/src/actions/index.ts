@@ -2,7 +2,7 @@ import { ActionRegistry, ActionHandler } from '../types';
 import { openAction } from './open';
 import { waitAction } from './wait';
 import { scrollAction } from './scroll';
-import { clickAction } from './click';
+import { clickAction, smartClickAction } from './click';
 import { playAction } from './play';
 import { likeAction } from './like';
 import { commentAction } from './comment';
@@ -25,7 +25,9 @@ const actionRegistry: ActionRegistry = {
   scroll: scrollAction,
   
   click: clickAction,
-  tap: clickAction,     // Alias
+  tap: clickAction,         // Alias
+  'smart-click': smartClickAction, // Visual-aware click
+  'visual-click': smartClickAction, // Alias for smart click
   
   play: playAction,
   listen: playAction,   // Alias
