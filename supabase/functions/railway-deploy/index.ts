@@ -6,7 +6,7 @@ const corsHeaders = {
 };
 
 interface DeployRequest {
-  action: 'check' | 'deploy' | 'status' | 'logs' | 'delete-project' | 'delete-service' | 'cleanup' | 'redeploy';
+  action: 'check' | 'deploy' | 'status' | 'logs' | 'delete-project' | 'delete-service' | 'cleanup' | 'redeploy' | 'project-info';
   serviceId?: string;
   projectId?: string;
   repoUrl?: string;
@@ -427,6 +427,75 @@ Deno.serve(async (req) => {
             url: latestDeployment.staticUrl,
           } : null,
           buildLogs,
+        }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // ========================================
+    // PROJECT-INFO - Get project details by ID
+    // ========================================
+    if (action === 'project-info' && body.projectId) {
+      console.log('Getting project info:', body.projectId);
+      
+      const projectData = await railwayQuery(RAILWAY_API_TOKEN, `
+        query($projectId: String!) {
+          project(id: $projectId) {
+            id
+            name
+            createdAt
+            environments {
+              edges {
+                node {
+                  id
+                  name
+                }
+              }
+            }
+            services {
+              edges {
+                node {
+                  id
+                  name
+                  deployments(first: 3) {
+                    edges {
+                      node {
+                        id
+                        status
+                        createdAt
+                        staticUrl
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      `, { projectId: body.projectId });
+
+      const project = projectData.project;
+      const services = (project?.services?.edges || []).map((e: any) => ({
+        id: e.node.id,
+        name: e.node.name,
+        deployments: (e.node.deployments?.edges || []).map((d: any) => d.node),
+      }));
+
+      const runnerService = services.find((s: any) => 
+        s.name.toLowerCase().includes('runner')
+      );
+
+      return new Response(
+        JSON.stringify({
+          success: true,
+          project: {
+            id: project?.id,
+            name: project?.name,
+            createdAt: project?.createdAt,
+          },
+          environments: (project?.environments?.edges || []).map((e: any) => e.node),
+          services,
+          runnerService: runnerService || null,
         }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
