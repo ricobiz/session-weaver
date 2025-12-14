@@ -61,18 +61,44 @@ function addLog(message: string) {
 
 async function ensureBrowser(): Promise<Page> {
   if (!testBrowser || !testBrowser.isConnected()) {
-    addLog('Launching browser...');
+    addLog('Launching browser with full stealth mode...');
     
     testBrowser = await chromium.launch({
       headless: process.env.HEADLESS !== 'false',
       args: [
+        // === CRITICAL: Anti-detection flags ===
         '--disable-blink-features=AutomationControlled',
         '--disable-infobars',
+        '--disable-automation',
+        '--disable-component-update',
+        '--disable-domain-reliability',
+        '--disable-background-networking',
+        '--disable-sync',
+        '--disable-translate',
+        '--disable-default-apps',
+        '--disable-extensions',
+        '--disable-component-extensions-with-background-pages',
+        '--disable-client-side-phishing-detection',
+        '--disable-background-timer-throttling',
+        '--disable-backgrounding-occluded-windows',
+        '--disable-renderer-backgrounding',
+        '--disable-features=TranslateUI,AutofillServerCommunication',
+        '--disable-ipc-flooding-protection',
+        '--window-size=1920,1080',
+        '--start-maximized',
+        '--no-first-run',
+        '--no-default-browser-check',
         '--no-sandbox',
         '--disable-setuid-sandbox',
         '--disable-dev-shm-usage',
+        '--disable-gpu',
+        '--disable-software-rasterizer',
       ],
-      ignoreDefaultArgs: ['--enable-automation'],
+      ignoreDefaultArgs: [
+        '--enable-automation',
+        '--enable-blink-features=IdleDetection',
+        '--export-tagged-pdf',
+      ],
     });
     
     const fingerprint = generateFingerprint(getRandomPreset());
@@ -85,10 +111,52 @@ async function ensureBrowser(): Promise<Page> {
       timezoneId: 'America/New_York',
     });
     
-    await applyStealthPatches(testContext, fingerprint);
-    testPage = await testContext.newPage();
+    // === CDP: Remove webdriver flag BEFORE any page loads ===
+    try {
+      testPage = await testContext.newPage();
+      const cdpSession = await testContext.newCDPSession(testPage);
+      
+      await cdpSession.send('Page.addScriptToEvaluateOnNewDocument', {
+        source: `
+          // Remove webdriver flag at the earliest possible moment
+          Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+          
+          // Remove phantom properties
+          delete window.callPhantom;
+          delete window._phantom;
+          delete window.phantom;
+          Object.defineProperty(window, 'callPhantom', { get: () => undefined });
+          Object.defineProperty(window, '_phantom', { get: () => undefined });
+          Object.defineProperty(window, 'phantom', { get: () => undefined });
+          
+          // Remove selenium/driver properties from document
+          ['__webdriver_script_fn', '__driver_evaluate', '__webdriver_evaluate', 
+           '__selenium_evaluate', '__fxdriver_evaluate', 'webdriver', 'driver',
+           '__webdriver_unwrapped', '__selenium_unwrapped', '__fxdriver_unwrapped']
+          .forEach(prop => {
+            try { delete document[prop]; } catch(e) {}
+            try { Object.defineProperty(document, prop, { get: () => undefined }); } catch(e) {}
+          });
+          
+          // Remove $cdc_ patterns (Chrome DevTools detection)
+          Object.keys(document).filter(k => /^\\$cdc_|^\\$chrome_/.test(k)).forEach(k => {
+            try { delete document[k]; } catch(e) {}
+          });
+          Object.keys(window).filter(k => /^\\$cdc_|^\\$chrome_/.test(k)).forEach(k => {
+            try { delete window[k]; } catch(e) {}
+          });
+        `
+      });
+      
+      await cdpSession.detach();
+      addLog('CDP stealth patches applied');
+    } catch (cdpError) {
+      addLog('CDP not available, using init script only');
+      testPage = await testContext.newPage();
+    }
     
-    addLog('Browser ready');
+    await applyStealthPatches(testContext, fingerprint);
+    addLog('Browser ready with full stealth');
   }
   
   if (!testPage || testPage.isClosed()) {
