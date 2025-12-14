@@ -75,13 +75,17 @@ export class AutonomousExecutor {
     browser: Browser,
     context: BrowserContext,
     page: Page
-  ): Promise<{ success: boolean; actionsExecuted: number; verificationScore: number }> {
+  ): Promise<{ success: boolean; actionsExecuted: number; verificationScore: number; generatedData?: any }> {
     const sessionLog = createSessionLogger(session.id);
     let actionsExecuted = 0;
     let totalVerificationScore = 0;
     let verifiedActions = 0;
+    let generatedData: any = null;
     const networkRequests: { url: string; method: string; timestamp: number }[] = [];
     const MAX_NETWORK_REQUESTS = 100;
+    
+    // История действий для AI - он должен знать что уже делал!
+    const actionHistory: { action: string; coordinates?: { x: number; y: number }; text?: string; url?: string; result: string; urlBefore: string; urlAfter: string }[] = [];
 
     sessionLog('info', `Starting autonomous execution for goal: ${goal}`);
 
@@ -123,14 +127,16 @@ export class AutonomousExecutor {
         // Capture state before action
         const beforeState = await this.captureState(page);
         const screenshotBefore = await this.captureScreenshot(page);
+        const urlBefore = page.url();
 
-        // Get next action from AI agent
+        // Get next action from AI agent - передаём историю действий!
         const agentResponse = await this.getNextAction(
           session.id,
           goal,
-          page.url(),
+          urlBefore,
           screenshotBefore,
-          agentEndpoint
+          agentEndpoint,
+          actionHistory
         );
 
         if (!agentResponse) {
@@ -145,6 +151,12 @@ export class AutonomousExecutor {
         if (agentResponse.action.type === 'complete') {
           sessionLog('success', `Goal achieved: ${agentResponse.action.reason}`);
           
+          // Сохраняем сгенерированные данные (логин/пароль и т.д.)
+          if ((agentResponse as any).generated_data) {
+            generatedData = (agentResponse as any).generated_data;
+            sessionLog('info', `Generated data: ${JSON.stringify(generatedData)}`);
+          }
+          
           const avgVerificationScore = verifiedActions > 0 
             ? totalVerificationScore / verifiedActions 
             : 1;
@@ -152,7 +164,8 @@ export class AutonomousExecutor {
           return { 
             success: true, 
             actionsExecuted, 
-            verificationScore: avgVerificationScore 
+            verificationScore: avgVerificationScore,
+            generatedData
           };
         }
 
@@ -175,6 +188,18 @@ export class AutonomousExecutor {
         // Capture state after action
         const afterState = await this.captureState(page);
         const screenshotAfter = await this.captureScreenshot(page);
+        const urlAfter = page.url();
+        
+        // Записываем в историю для AI
+        actionHistory.push({
+          action: agentResponse.action.type,
+          coordinates: agentResponse.action.coordinates,
+          text: agentResponse.action.text,
+          url: agentResponse.action.url,
+          result: actionResult.success ? 'success' : `failed: ${actionResult.error}`,
+          urlBefore,
+          urlAfter
+        });
 
         // Verify action if required
         if (agentResponse.requires_verification && this.config.verificationEnabled) {
@@ -311,9 +336,20 @@ export class AutonomousExecutor {
     goal: string,
     currentUrl: string,
     screenshot: string,
-    agentEndpoint: string
+    agentEndpoint: string,
+    actionHistory: { action: string; coordinates?: { x: number; y: number }; text?: string; url?: string; result: string; urlBefore: string; urlAfter: string }[] = []
   ): Promise<AgentResponse | null> {
     try {
+      // Формируем краткую историю для AI - последние 10 действий
+      const recentHistory = actionHistory.slice(-10).map((h, i) => ({
+        step: actionHistory.length - 10 + i + 1,
+        action: h.action,
+        coordinates: h.coordinates,
+        text: h.text?.slice(0, 50),
+        result: h.result,
+        url_changed: h.urlBefore !== h.urlAfter
+      }));
+      
       const response = await fetch(`${agentEndpoint}/decide`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -323,6 +359,8 @@ export class AutonomousExecutor {
           goal,
           current_url: currentUrl,
           screenshot_base64: screenshot,
+          previous_actions: recentHistory,
+          attempt: actionHistory.length + 1
         }),
       });
 
