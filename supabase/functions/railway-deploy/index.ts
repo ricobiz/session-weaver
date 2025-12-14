@@ -159,58 +159,50 @@ Deno.serve(async (req) => {
     if (action === 'deploy') {
       console.log('Starting Railway deployment...');
 
-      // Step 0: Get user's workspaces - first get user ID
+      // Step 0: Get user info and existing projects to determine workspaceId
       const meData = await railwayQuery(RAILWAY_API_TOKEN, `
         query {
           me {
             id
-            workspaces {
-              edges {
-                node {
-                  id
-                  name
-                }
+          }
+          projects {
+            edges {
+              node {
+                id
+                name
+                teamId
               }
             }
           }
         }
       `);
 
-      // Get personal workspace (user's default workspace)
-      const workspaces = meData.me?.workspaces?.edges || [];
+      const existingProjects = meData.projects?.edges || [];
       let workspaceId: string | null = null;
       
-      if (workspaces.length > 0) {
-        // Use first available workspace
-        workspaceId = workspaces[0].node.id;
-        console.log('Using workspace:', workspaceId, workspaces[0].node.name);
-      } else {
-        // Fallback: use user ID as personal workspace
+      // Try to get workspaceId from an existing project's teamId
+      for (const proj of existingProjects) {
+        if (proj.node.teamId) {
+          workspaceId = proj.node.teamId;
+          console.log('Using teamId from existing project:', workspaceId);
+          break;
+        }
+      }
+      
+      // Fallback: use user ID (for personal/hobby accounts)
+      if (!workspaceId) {
         workspaceId = meData.me?.id;
-        console.log('Using personal workspace (user ID):', workspaceId);
+        console.log('Using user ID as workspace:', workspaceId);
       }
 
       if (!workspaceId) {
         throw new Error('Could not determine workspace ID. Please check your Railway account.');
       }
 
-      // Step 1: Create project if doesn't exist
+      // Step 1: Check for existing automation project
       let projectId: string;
-      
-      const existingProjects = await railwayQuery(RAILWAY_API_TOKEN, `
-        query {
-          projects {
-            edges {
-              node {
-                id
-                name
-              }
-            }
-          }
-        }
-      `);
 
-      const automationProject = existingProjects.projects.edges.find(
+      const automationProject = existingProjects.find(
         (e: any) => e.node.name === 'Automation-Runner'
       );
 
@@ -218,7 +210,7 @@ Deno.serve(async (req) => {
         projectId = automationProject.node.id;
         console.log('Using existing project:', projectId);
       } else {
-        // Create new project with workspaceId (required by Railway API)
+        // Create new project with teamId (required by Railway API)
         const createResult = await railwayQuery(RAILWAY_API_TOKEN, `
           mutation($input: ProjectCreateInput!) {
             projectCreate(input: $input) {
@@ -230,7 +222,7 @@ Deno.serve(async (req) => {
           input: {
             name: 'Automation-Runner',
             description: 'Playwright automation runner for session execution',
-            workspaceId: workspaceId,
+            teamId: workspaceId,
           }
         });
 
