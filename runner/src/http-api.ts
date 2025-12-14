@@ -361,7 +361,8 @@ async function executeAction(req: ExecuteRequest): Promise<ExecuteResponse> {
       case 'warmup': {
         logAction('Starting browser warmup...');
         const sites = req.sites || undefined;
-        const warmupConfig = sites ? { warmupSites: sites.map((url: string) => ({ url, actions: ['scroll', 'wait'] as ('scroll' | 'click' | 'hover' | 'wait')[] })) } : undefined;
+const warmupActions: ('scroll' | 'click' | 'hover' | 'wait')[] = ['scroll', 'wait'];
+        const warmupConfig = sites ? { warmupSites: sites.map((url: string) => ({ url, actions: warmupActions })) } : undefined;
         
         const result = await warmupBrowser(testContext!, page, warmupConfig);
         
