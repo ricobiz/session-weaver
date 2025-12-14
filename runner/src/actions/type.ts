@@ -1,6 +1,7 @@
 /**
  * Type Action
  * Human-like text input with realistic typing speed and patterns
+ * v2 - Fixed TypeScript errors
  */
 
 import { Page } from 'playwright';
