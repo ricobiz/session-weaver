@@ -67,6 +67,53 @@ export type Database = {
           },
         ]
       }
+      ai_usage_log: {
+        Row: {
+          cost_usd: number | null
+          created_at: string
+          id: string
+          input_tokens: number | null
+          latency_ms: number | null
+          model_used: string
+          output_tokens: number | null
+          provider: string
+          session_id: string | null
+          task_type: string
+        }
+        Insert: {
+          cost_usd?: number | null
+          created_at?: string
+          id?: string
+          input_tokens?: number | null
+          latency_ms?: number | null
+          model_used: string
+          output_tokens?: number | null
+          provider: string
+          session_id?: string | null
+          task_type: string
+        }
+        Update: {
+          cost_usd?: number | null
+          created_at?: string
+          id?: string
+          input_tokens?: number | null
+          latency_ms?: number | null
+          model_used?: string
+          output_tokens?: number | null
+          provider?: string
+          session_id?: string | null
+          task_type?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ai_usage_log_session_id_fkey"
+            columns: ["session_id"]
+            isOneToOne: false
+            referencedRelation: "sessions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       automation_bots: {
         Row: {
           avg_execution_time_ms: number | null
@@ -160,6 +207,51 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      model_config: {
+        Row: {
+          cost_per_1k_tokens: number | null
+          created_at: string
+          custom_endpoint: string | null
+          fallback_model: string | null
+          id: string
+          is_active: boolean | null
+          max_tokens: number | null
+          model_name: string
+          provider: string
+          task_type: string
+          temperature: number | null
+          updated_at: string
+        }
+        Insert: {
+          cost_per_1k_tokens?: number | null
+          created_at?: string
+          custom_endpoint?: string | null
+          fallback_model?: string | null
+          id?: string
+          is_active?: boolean | null
+          max_tokens?: number | null
+          model_name: string
+          provider: string
+          task_type: string
+          temperature?: number | null
+          updated_at?: string
+        }
+        Update: {
+          cost_per_1k_tokens?: number | null
+          created_at?: string
+          custom_endpoint?: string | null
+          fallback_model?: string | null
+          id?: string
+          is_active?: boolean | null
+          max_tokens?: number | null
+          model_name?: string
+          provider?: string
+          task_type?: string
+          temperature?: number | null
+          updated_at?: string
+        }
+        Relationships: []
       }
       profiles: {
         Row: {
@@ -586,6 +678,50 @@ export type Database = {
             columns: ["generated_scenario_id"]
             isOneToOne: false
             referencedRelation: "scenarios"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      telegram_bots: {
+        Row: {
+          automation_bot_id: string | null
+          bot_token_encrypted: string | null
+          created_at: string
+          id: string
+          name: string
+          status: string | null
+          updated_at: string
+          username: string | null
+          webhook_url: string | null
+        }
+        Insert: {
+          automation_bot_id?: string | null
+          bot_token_encrypted?: string | null
+          created_at?: string
+          id?: string
+          name: string
+          status?: string | null
+          updated_at?: string
+          username?: string | null
+          webhook_url?: string | null
+        }
+        Update: {
+          automation_bot_id?: string | null
+          bot_token_encrypted?: string | null
+          created_at?: string
+          id?: string
+          name?: string
+          status?: string | null
+          updated_at?: string
+          username?: string | null
+          webhook_url?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "telegram_bots_automation_bot_id_fkey"
+            columns: ["automation_bot_id"]
+            isOneToOne: false
+            referencedRelation: "automation_bots"
             referencedColumns: ["id"]
           },
         ]
