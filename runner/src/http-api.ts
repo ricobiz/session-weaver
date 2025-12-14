@@ -3,6 +3,7 @@ import { chromium, Browser, BrowserContext, Page } from 'playwright';
 import { log } from './logger';
 import { applyStealthPatches } from './stealth';
 import { generateFingerprint, getRandomPreset } from './stealth/fingerprint';
+import { warmupBrowser, generateCookiesForDomain, saveBrowserState, loadBrowserState, BrowserState } from './stealth/warmup';
 import { 
   humanType, 
   humanClick, 
@@ -16,20 +17,23 @@ import {
 } from './stealth/human-behavior';
 
 interface ExecuteRequest {
-  action: 'screenshot' | 'navigate' | 'click' | 'dblclick' | 'type' | 'scroll' | 'drag' | 'mousemove' | 'keyboard' | 'idle' | 'evaluate';
+  action: 'screenshot' | 'navigate' | 'click' | 'dblclick' | 'type' | 'scroll' | 'drag' | 'mousemove' | 'keyboard' | 'idle' | 'evaluate' | 'warmup' | 'add-cookies' | 'get-cookies' | 'save-state' | 'load-state';
   url?: string;
   selector?: string;
   text?: string;
   coordinates?: { x: number; y: number };
-  toCoordinates?: { x: number; y: number }; // For drag
-  key?: string; // For keyboard navigation
+  toCoordinates?: { x: number; y: number };
+  key?: string;
   script?: string;
   timeout?: number;
   speed?: 'slow' | 'normal' | 'fast';
   clear_first?: boolean;
   press_enter?: boolean;
-  click_area_radius?: number; // Pixels for random click area
-  duration?: number; // For idle movement
+  click_area_radius?: number;
+  duration?: number;
+  domain?: string;
+  sites?: string[];
+  state?: BrowserState;
 }
 
 interface ExecuteResponse {
@@ -350,6 +354,69 @@ async function executeAction(req: ExecuteRequest): Promise<ExecuteResponse> {
           success: true,
           data: result,
           currentUrl: page.url(),
+          logs,
+        };
+      }
+
+      case 'warmup': {
+        logAction('Starting browser warmup...');
+        const sites = req.sites || undefined;
+        const warmupConfig = sites ? { warmupSites: sites.map((url: string) => ({ url, actions: ['scroll', 'wait'] as const })) } : undefined;
+        
+        const result = await warmupBrowser(testContext!, page, warmupConfig);
+        
+        logAction(`Warmup complete: ${result.sitesVisited.length} sites, ${result.cookiesAdded} cookies`);
+        
+        const screenshot = await page.screenshot({ type: 'png' });
+        return {
+          success: true,
+          data: result,
+          currentUrl: page.url(),
+          screenshot: screenshot.toString('base64'),
+          logs,
+        };
+      }
+
+      case 'add-cookies': {
+        if (!req.domain) throw new Error('Domain required for add-cookies');
+        logAction(`Adding cookies for domain: ${req.domain}`);
+        
+        const count = await generateCookiesForDomain(testContext!, req.domain);
+        
+        return {
+          success: true,
+          data: { cookiesAdded: count, domain: req.domain },
+          logs,
+        };
+      }
+
+      case 'get-cookies': {
+        logAction('Getting all cookies...');
+        const cookies = await testContext!.cookies();
+        return {
+          success: true,
+          data: { cookies, count: cookies.length },
+          logs,
+        };
+      }
+
+      case 'save-state': {
+        logAction('Saving browser state...');
+        const state = await saveBrowserState(testContext!, page);
+        return {
+          success: true,
+          data: state,
+          logs,
+        };
+      }
+
+      case 'load-state': {
+        if (!req.state) throw new Error('State required for load-state');
+        logAction('Loading browser state...');
+        await loadBrowserState(testContext!, page, req.state);
+        return {
+          success: true,
+          data: { loaded: true },
           logs,
         };
       }
