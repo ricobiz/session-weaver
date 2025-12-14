@@ -1,4 +1,4 @@
-export type SessionStatus = 'idle' | 'running' | 'success' | 'error' | 'paused';
+export type SessionStatus = 'idle' | 'queued' | 'running' | 'paused' | 'success' | 'error' | 'cancelled';
 
 export interface UserProfile {
   id: string;
