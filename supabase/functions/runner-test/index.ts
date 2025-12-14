@@ -779,8 +779,8 @@ serve(async (req) => {
       });
     }
 
-    // POST /test-autonomous - Run autonomous AI-driven task using existing AutonomousExecutor logic
-    // This creates a proper autonomous session and uses the agent-executor endpoints
+    // POST /test-autonomous - Run autonomous AI-driven task
+    // AI agent understands simple commands like "зарегистрируйся" and figures out everything itself
     if (req.method === 'POST' && path === '/test-autonomous') {
       const { url, goal, max_actions = 50 } = await req.json();
       
@@ -789,8 +789,15 @@ serve(async (req) => {
           error: 'url and goal are required',
           example: { 
             url: 'https://justfans.uno', 
-            goal: 'Register a new account: find registration form, generate random username (test_user_XXX), password, email and submit' 
-          }
+            goal: 'зарегистрируйся'  // Simple command - AI figures out the rest!
+          },
+          supported_commands: [
+            'зарегистрируйся',
+            'залогинься',
+            'подпишись на канал',
+            'поставь лайк',
+            'оставь комментарий'
+          ]
         }), {
           status: 400,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -819,10 +826,14 @@ serve(async (req) => {
       let lastScreenshot = '';
       let currentUrl = url;
       
+      let generatedData: any = null; // AI-generated credentials/data
+      
       const logStep = (type: string, data: any) => {
         executionLog.push({ step: actionsExecuted, type, time: new Date().toISOString(), ...data });
         console.log(`[autonomous #${actionsExecuted}] ${type}:`, JSON.stringify(data).slice(0, 150));
       };
+
+      console.log(`[autonomous] Simple goal: "${goal}" - AI will figure out the details`);
 
       try {
         // Step 1: Navigate to target
@@ -886,19 +897,33 @@ serve(async (req) => {
           }
           
           const decision = await decideResponse.json();
+          
+          // Track AI-generated data (credentials, etc.)
+          if (decision.generated_data) {
+            generatedData = { ...generatedData, ...decision.generated_data };
+          }
+          
           logStep('ai_decision', { 
             action: decision.action?.type,
             coordinates: decision.action?.coordinates,
             text: decision.action?.text?.slice(0, 30),
             confidence: decision.confidence,
             progress: decision.goal_progress,
-            reasoning: decision.reasoning?.slice(0, 80)
+            reasoning: decision.reasoning?.slice(0, 80),
+            generated_data: decision.generated_data ? Object.keys(decision.generated_data) : null
           });
           
           // Check terminal states
           if (decision.action?.type === 'complete') {
             goalAchieved = true;
-            logStep('goal_achieved', { reason: decision.action.reason });
+            // Capture final generated data from complete action
+            if (decision.action.generated_data) {
+              generatedData = { ...generatedData, ...decision.action.generated_data };
+            }
+            logStep('goal_achieved', { 
+              reason: decision.action.reason,
+              generated_data: generatedData
+            });
             break;
           }
           
@@ -986,6 +1011,8 @@ serve(async (req) => {
           final_url: finalSS.currentUrl || currentUrl,
           actions_executed: actionsExecuted,
           max_actions,
+          // AI-generated data (credentials, etc.)
+          generated_data: generatedData,
           execution_log: executionLog,
           final_screenshot: finalSS.screenshot,
           summary: goalAchieved 
@@ -1001,6 +1028,7 @@ serve(async (req) => {
           error: error instanceof Error ? error.message : String(error),
           session_id: sessionId,
           actions_executed: actionsExecuted,
+          generated_data: generatedData,
           execution_log: executionLog,
           final_screenshot: lastScreenshot
         }), {

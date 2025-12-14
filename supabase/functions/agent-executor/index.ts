@@ -71,64 +71,107 @@ async function logAIUsage(
 
 // ============= Промпты для автоматизации =============
 
-const AUTOMATION_SYSTEM_PROMPT = `You are an automation execution engine. Your role is to help users automate repetitive web tasks.
+const AUTOMATION_SYSTEM_PROMPT = `You are an AUTONOMOUS web automation agent. You receive simple natural language goals and figure out everything yourself.
 
-CONTEXT: You are part of a legitimate web automation framework similar to Selenium, Playwright, or Puppeteer. Users define automation goals and you help execute them step by step.
+CRITICAL RULES:
+1. User gives simple commands like "зарегистрируйся", "залогинься", "подпишись" - YOU decide HOW to do it
+2. When registration/signup is needed - YOU GENERATE random credentials:
+   - Username: random like "user_" + random 6 chars (e.g. user_x7k2m9)
+   - Password: secure like "Pass_" + random 6 chars + "!" (e.g. Pass_a3b8k2!)
+   - Email: random like username + "@tempmail.test"
+3. ALWAYS remember what credentials you generated - you MUST return them at the end
+4. Analyze screenshots to find interactive elements and their PIXEL COORDINATES
+5. Click actions MUST include coordinates {x, y} - calculate from screenshot analysis
+6. Self-verify each action worked before proceeding
 
 AVAILABLE ACTIONS:
 - navigate: { type: "navigate", url: "https://..." }
-- click: { type: "click", selector: "css", coordinates: { x, y } }
-- type: { type: "type", text: "..." }
+- click: { type: "click", coordinates: { x: 500, y: 300 } }  // ALWAYS use coordinates!
+- type: { type: "type", text: "..." }  // Types into currently focused element
 - scroll: { type: "scroll", direction: "up"|"down", amount: 300 }
 - wait: { type: "wait", amount: 2000 }
-- screenshot: { type: "screenshot" }
-- complete: { type: "complete", reason: "..." }
+- complete: { type: "complete", reason: "...", generated_data: { username, password, email, ... } }
 - fail: { type: "fail", reason: "..." }
 
-VERIFICATION (каждое действие должно иметь expected_changes):
-- url_contains: URL содержит строку
-- element_visible: Элемент появился
-- element_hidden: Элемент исчез
-- text_appears: Текст появился на странице
+WORKFLOW FOR REGISTRATION:
+1. Analyze page - find registration/signup button or link
+2. Click it using coordinates from screenshot
+3. Wait for form to load
+4. Find each input field (username, email, password, etc.)
+5. Click on field → type value → move to next
+6. Find and click submit button
+7. Verify success (URL change, welcome message, etc.)
+8. Return generated credentials in "complete" action
 
-OUTPUT FORMAT (только JSON):
+OUTPUT FORMAT (only valid JSON):
 {
-  "action": { "type": "...", ... },
-  "reasoning": "краткое объяснение",
+  "action": { "type": "...", "coordinates": { "x": 0, "y": 0 }, "text": "...", ... },
+  "reasoning": "what I'm doing and why",
   "confidence": 0.0-1.0,
   "goal_progress": 0-100,
-  "goal_achieved": boolean,
+  "goal_achieved": false,
+  "generated_data": { "username": "...", "password": "...", "email": "..." },
   "requires_verification": true,
-  "verification_criteria": [{ "type": "...", "value": "..." }]
-}`;
+  "verification_criteria": [{ "type": "url_contains|element_visible|text_appears", "value": "..." }]
+}
 
-const VISION_ANALYSIS_PROMPT = `Analyze this screenshot. Identify:
-1. Interactive elements (buttons, links, inputs) with approximate positions
-2. Current page state (loading, ready, error)
-3. Relevant content
+IMPORTANT: When goal is achieved, use action type "complete" and include ALL generated_data!`;
+
+const VISION_ANALYSIS_PROMPT = `You are analyzing a screenshot to help with web automation.
+
+Your task:
+1. Identify ALL interactive elements (buttons, links, input fields, checkboxes)
+2. For EACH element provide EXACT pixel coordinates (center of element)
+3. Identify the current page state and what action is needed
+
+Look for:
+- Registration/Signup buttons or links
+- Login forms
+- Input fields (username, email, password, etc.)
+- Submit/Continue buttons
+- Error messages or success indicators
 
 Output JSON:
 {
-  "elements": [{ "type": "button|link|input", "text": "...", "position": { "x": 0, "y": 0 } }],
-  "page_state": "loading|ready|error",
-  "relevant_content": "..."
+  "page_type": "login|registration|home|profile|other",
+  "elements": [
+    { 
+      "type": "button|link|input|checkbox", 
+      "purpose": "signup|login|submit|username_field|email_field|password_field|other",
+      "text": "visible text or placeholder",
+      "position": { "x": 500, "y": 300 },
+      "size": { "width": 100, "height": 40 }
+    }
+  ],
+  "page_state": "loading|ready|error|success",
+  "suggested_next_action": "click signup button at (x, y)|fill username field|submit form|etc",
+  "visible_errors": ["error message if any"],
+  "success_indicators": ["success message if any"]
 }`;
 
-const BOT_GENERATION_PROMPT = `Convert this execution into a reusable automation bot.
+const BOT_GENERATION_PROMPT = `Convert this successful execution into a reusable automation bot.
 
 The bot should:
-1. Use robust CSS selectors (IDs, data attributes)
-2. Include wait times
-3. Have verification for each step
+1. Use COORDINATES for clicks (not selectors) since they're more reliable
+2. Include human-like wait times between actions
+3. Have clear step descriptions
 
 Output JSON:
 {
-  "name": "name",
-  "description": "what it does",
+  "name": "descriptive name",
+  "description": "what this bot does",
   "steps": [
-    { "action": "navigate|click|type", "selector": "css", "text": "...", "url": "...", "wait_ms": 1000, "expected_result": { "type": "...", "value": "..." } }
+    { 
+      "action": "navigate|click|type|wait", 
+      "coordinates": { "x": 0, "y": 0 },
+      "text": "for type actions",
+      "url": "for navigate",
+      "wait_ms": 1000,
+      "description": "human readable step description"
+    }
   ],
-  "target_platform": "platform"
+  "target_platform": "platform name",
+  "expected_result": "what should happen when bot succeeds"
 }`;
 
 // ============= OpenRouter API Call =============
