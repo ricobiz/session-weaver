@@ -31,25 +31,62 @@ function getStealthScript(fingerprint?: Fingerprint): string {
   return `(function(){
     'use strict';
     
-    // ========== WEBDRIVER DETECTION ==========
-    // Multiple methods to hide webdriver
-    Object.defineProperty(navigator,'webdriver',{get:()=>false,configurable:true});
+    // ========== WEBDRIVER DETECTION (COMPREHENSIVE) ==========
+    // Method 1: Direct property override
+    Object.defineProperty(navigator, 'webdriver', {
+      get: () => undefined,
+      set: () => {},
+      configurable: true
+    });
     
-    // Delete from prototype chain
+    // Method 2: Delete from prototype chain
     try {
       const proto = Object.getPrototypeOf(navigator);
-      if (proto.hasOwnProperty('webdriver')) {
-        delete proto.webdriver;
-      }
+      delete proto.webdriver;
     } catch(e){}
     
-    // Override property descriptor
+    // Method 3: Override on Navigator prototype
     try {
       Object.defineProperty(Navigator.prototype, 'webdriver', {
-        get: () => false,
+        get: () => undefined,
         configurable: true
       });
     } catch(e){}
+    
+    // Method 4: New method - check via getOwnPropertyDescriptor
+    const origGetOwnPropertyDescriptor = Object.getOwnPropertyDescriptor;
+    Object.getOwnPropertyDescriptor = function(obj, prop) {
+      if (prop === 'webdriver' && (obj === navigator || obj === Navigator.prototype)) {
+        return undefined;
+      }
+      return origGetOwnPropertyDescriptor.call(this, obj, prop);
+    };
+    
+    // Method 5: Prevent detection via 'in' operator
+    const navigatorProxy = new Proxy(navigator, {
+      has: (target, key) => {
+        if (key === 'webdriver') return false;
+        return key in target;
+      },
+      get: (target, key) => {
+        if (key === 'webdriver') return undefined;
+        const value = target[key];
+        return typeof value === 'function' ? value.bind(target) : value;
+      }
+    });
+    
+    // Method 6: CDP detection bypass
+    try {
+      Object.defineProperty(navigator, '__cdp_session', { get: () => undefined });
+    } catch(e){}
+    
+    // Method 7: Override hasOwnProperty for navigator
+    const origHasOwnProperty = Object.prototype.hasOwnProperty;
+    const navigatorHasOwnProperty = function(prop) {
+      if (this === navigator && prop === 'webdriver') return false;
+      return origHasOwnProperty.call(this, prop);
+    };
+    Object.prototype.hasOwnProperty = navigatorHasOwnProperty;
     
     // ========== AUTOMATION FLAGS ==========
     const automationProps = [
@@ -180,61 +217,92 @@ function getStealthScript(fingerprint?: Fingerprint): string {
       { name: 'Native Client', description: '', filename: 'internal-nacl-plugin', mimeTypes: [{ type: 'application/x-nacl', suffixes: '', description: 'Native Client Executable' }] }
     ];
     
-    // Create proper PluginArray
-    const pluginArray = Object.create(PluginArray.prototype);
-    const mimeTypeArray = Object.create(MimeTypeArray.prototype);
-    const mimeTypes = [];
-    
-    pluginData.forEach((p, idx) => {
-      const plugin = Object.create(Plugin.prototype);
-      const pluginMimeTypes = [];
+    // Create proper PluginArray that passes instanceof checks
+    const createPluginArray = () => {
+      const plugins = [];
+      const allMimeTypes = [];
       
-      p.mimeTypes.forEach((mt, mtIdx) => {
-        const mimeType = Object.create(MimeType.prototype);
-        Object.defineProperties(mimeType, {
-          type: { value: mt.type, enumerable: true },
-          suffixes: { value: mt.suffixes, enumerable: true },
-          description: { value: mt.description, enumerable: true },
-          enabledPlugin: { value: plugin, enumerable: true }
+      pluginData.forEach((p, idx) => {
+        // Create real-like Plugin object
+        const plugin = Object.create(Plugin.prototype);
+        const pluginMimes = [];
+        
+        p.mimeTypes.forEach((mt) => {
+          const mimeType = Object.create(MimeType.prototype);
+          Object.defineProperties(mimeType, {
+            type: { value: mt.type, enumerable: true, configurable: false },
+            suffixes: { value: mt.suffixes, enumerable: true, configurable: false },
+            description: { value: mt.description, enumerable: true, configurable: false },
+            enabledPlugin: { value: plugin, enumerable: true, configurable: false }
+          });
+          pluginMimes.push(mimeType);
+          allMimeTypes.push(mimeType);
         });
-        pluginMimeTypes.push(mimeType);
-        mimeTypes.push(mimeType);
+        
+        Object.defineProperties(plugin, {
+          name: { value: p.name, enumerable: true },
+          description: { value: p.description, enumerable: true },
+          filename: { value: p.filename, enumerable: true },
+          length: { value: pluginMimes.length, enumerable: true }
+        });
+        
+        pluginMimes.forEach((mt, i) => {
+          plugin[i] = mt;
+          plugin[mt.type] = mt;
+        });
+        
+        plugin.item = function(i) { return pluginMimes[i] || null; };
+        plugin.namedItem = function(name) { return pluginMimes.find(m => m.type === name) || null; };
+        plugin[Symbol.iterator] = function*() { yield* pluginMimes; };
+        
+        plugins.push(plugin);
       });
       
-      Object.defineProperties(plugin, {
-        name: { value: p.name, enumerable: true },
-        description: { value: p.description, enumerable: true },
-        filename: { value: p.filename, enumerable: true },
-        length: { value: pluginMimeTypes.length, enumerable: true }
+      // Create PluginArray with proper prototype chain
+      const pArr = Object.create(PluginArray.prototype);
+      plugins.forEach((p, i) => {
+        Object.defineProperty(pArr, i, { value: p, enumerable: true, configurable: false });
+        Object.defineProperty(pArr, p.name, { value: p, enumerable: false, configurable: false });
       });
+      Object.defineProperty(pArr, 'length', { value: plugins.length, enumerable: true, configurable: false });
+      pArr.item = function(i) { return plugins[i] || null; };
+      pArr.namedItem = function(name) { return plugins.find(p => p.name === name) || null; };
+      pArr.refresh = function() {};
+      pArr[Symbol.iterator] = function*() { yield* plugins; };
       
-      pluginMimeTypes.forEach((mt, i) => {
-        Object.defineProperty(plugin, i, { value: mt, enumerable: true });
-        Object.defineProperty(plugin, mt.type, { value: mt, enumerable: false });
+      // Create MimeTypeArray  
+      const mArr = Object.create(MimeTypeArray.prototype);
+      allMimeTypes.forEach((mt, i) => {
+        Object.defineProperty(mArr, i, { value: mt, enumerable: true, configurable: false });
+        Object.defineProperty(mArr, mt.type, { value: mt, enumerable: false, configurable: false });
       });
+      Object.defineProperty(mArr, 'length', { value: allMimeTypes.length, enumerable: true, configurable: false });
+      mArr.item = function(i) { return allMimeTypes[i] || null; };
+      mArr.namedItem = function(name) { return allMimeTypes.find(m => m.type === name) || null; };
+      mArr[Symbol.iterator] = function*() { yield* allMimeTypes; };
       
-      plugin.item = function(i) { return pluginMimeTypes[i] || null; };
-      plugin.namedItem = function(name) { return pluginMimeTypes.find(m => m.type === name) || null; };
-      
-      Object.defineProperty(pluginArray, idx, { value: plugin, enumerable: true });
-      Object.defineProperty(pluginArray, p.name, { value: plugin, enumerable: false });
+      return { plugins: pArr, mimeTypes: mArr };
+    };
+    
+    const { plugins: pluginArray, mimeTypes: mimeTypeArray } = createPluginArray();
+    
+    // Ensure instanceof checks pass
+    Object.defineProperty(navigator, 'plugins', { 
+      get: function() { 
+        return pluginArray; 
+      }, 
+      configurable: true 
+    });
+    Object.defineProperty(navigator, 'mimeTypes', { 
+      get: function() { 
+        return mimeTypeArray; 
+      }, 
+      configurable: true 
     });
     
-    Object.defineProperty(pluginArray, 'length', { value: pluginData.length, enumerable: true });
-    pluginArray.item = function(i) { return this[i] || null; };
-    pluginArray.namedItem = function(name) { return this[name] || null; };
-    pluginArray.refresh = function() {};
-    
-    mimeTypes.forEach((mt, i) => {
-      Object.defineProperty(mimeTypeArray, i, { value: mt, enumerable: true });
-      Object.defineProperty(mimeTypeArray, mt.type, { value: mt, enumerable: false });
-    });
-    Object.defineProperty(mimeTypeArray, 'length', { value: mimeTypes.length, enumerable: true });
-    mimeTypeArray.item = function(i) { return this[i] || null; };
-    mimeTypeArray.namedItem = function(name) { return this[name] || null; };
-    
-    Object.defineProperty(navigator, 'plugins', { get: () => pluginArray, configurable: true });
-    Object.defineProperty(navigator, 'mimeTypes', { get: () => mimeTypeArray, configurable: true });
+    // Verify PluginArray type matches
+    Object.setPrototypeOf(pluginArray, PluginArray.prototype);
+    Object.setPrototypeOf(mimeTypeArray, MimeTypeArray.prototype);
     
     // ========== HARDWARE PROPERTIES ==========
     Object.defineProperty(navigator, 'hardwareConcurrency', { get: () => ${fp.hardwareConcurrency}, configurable: true });
