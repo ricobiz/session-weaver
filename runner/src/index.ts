@@ -18,12 +18,8 @@ const config: RunnerConfig = {
   sessionRetryLimit: parseInt(process.env.SESSION_RETRY_LIMIT || '3', 10),
 };
 
-// Validate configuration
-if (!config.apiBaseUrl) {
-  console.error('ERROR: API_BASE_URL is required');
-  console.error('Set it in .env file or as environment variable');
-  process.exit(1);
-}
+// Note: API_BASE_URL is optional - runner can work in HTTP-only mode for testing
+const isApiMode = !!config.apiBaseUrl;
 
 // Set log level
 setLogLevel(config.logLevel);
@@ -32,24 +28,25 @@ setLogLevel(config.logLevel);
 let activeSessionCount = 0;
 let isShuttingDown = false;
 
-// API client
-const api = new ApiClient(config.apiBaseUrl, config.runnerId);
+// API client (only if API mode)
+const api = isApiMode ? new ApiClient(config.apiBaseUrl, config.runnerId) : null;
 
-// Session executor
+// Session executor (only if API mode)
 const executorConfig: ExecutorConfig = {
   headless: config.headless,
   stepRetryLimit: config.stepRetryLimit,
   sessionRetryLimit: config.sessionRetryLimit,
 };
-const executor = new SessionExecutor(api, executorConfig);
+const executor = isApiMode && api ? new SessionExecutor(api, executorConfig) : null;
 
-// Health reporter
-const healthReporter = new HealthReporter(api, config.runnerId, 30000);
+// Health reporter (only if API mode)
+const healthReporter = isApiMode && api ? new HealthReporter(api, config.runnerId, 30000) : null;
 
 /**
- * Poll for and execute jobs
+ * Poll for and execute jobs (only in API mode)
  */
 async function pollForJobs(): Promise<void> {
+  if (!api || !executor || !healthReporter) return;
   if (isShuttingDown) return;
   
   if (activeSessionCount >= config.maxConcurrency) {
@@ -87,9 +84,11 @@ async function pollForJobs(): Promise<void> {
 }
 
 /**
- * Execute a job
+ * Execute a job (only in API mode)
  */
 async function executeJob(job: Job): Promise<void> {
+  if (!executor || !healthReporter) return;
+  
   try {
     const result = await executor.execute(job);
     healthReporter.recordExecution(result.success);
@@ -107,42 +106,44 @@ async function main(): Promise<void> {
   log('info', 'Session Framework Runner');
   log('info', '═══════════════════════════════════════════════════');
   log('info', `Runner ID: ${config.runnerId}`);
-  log('info', `API: ${config.apiBaseUrl}`);
-  log('info', `Max Concurrency: ${config.maxConcurrency}`);
-  log('info', `Poll Interval: ${config.pollIntervalMs}ms`);
+  log('info', `Mode: ${isApiMode ? 'API + HTTP' : 'HTTP-only (testing)'}`);
+  if (isApiMode) {
+    log('info', `API: ${config.apiBaseUrl}`);
+    log('info', `Max Concurrency: ${config.maxConcurrency}`);
+    log('info', `Poll Interval: ${config.pollIntervalMs}ms`);
+  }
   log('info', `Headless: ${config.headless}`);
-  log('info', `Step Retry Limit: ${config.stepRetryLimit}`);
-  log('info', `Session Retry Limit: ${config.sessionRetryLimit}`);
   log('info', '═══════════════════════════════════════════════════');
 
   // Start HTTP API for direct testing
-  const httpPort = parseInt(process.env.HTTP_API_PORT || '3001', 10);
+  const httpPort = parseInt(process.env.HTTP_API_PORT || process.env.PORT || '3001', 10);
   startHttpApi(httpPort);
 
-  // Start health reporter
-  healthReporter.start();
+  // Only start job polling if in API mode
+  if (isApiMode && healthReporter) {
+    healthReporter.start();
+    log('info', 'Starting job polling...');
 
-  log('info', 'Starting job polling...');
+    const poll = async () => {
+      await pollForJobs();
+      
+      if (!isShuttingDown) {
+        setTimeout(poll, config.pollIntervalMs);
+      }
+    };
 
-  // Start polling loop
-  const poll = async () => {
-    await pollForJobs();
-    
-    if (!isShuttingDown) {
-      setTimeout(poll, config.pollIntervalMs);
-    }
-  };
-
-  poll();
+    poll();
+  } else {
+    log('info', 'Running in HTTP-only mode (no job polling)');
+  }
 
   // Keep process alive
   await new Promise<void>((resolve) => {
     process.on('SIGINT', () => {
       log('info', 'Received SIGINT, shutting down gracefully...');
       isShuttingDown = true;
-      healthReporter.stop();
+      if (healthReporter) healthReporter.stop();
       
-      // Wait for active sessions to complete
       const checkAndExit = () => {
         if (activeSessionCount === 0) {
           log('info', 'All sessions completed, exiting');
@@ -159,11 +160,10 @@ async function main(): Promise<void> {
     process.on('SIGTERM', () => {
       log('info', 'Received SIGTERM, shutting down gracefully...');
       isShuttingDown = true;
-      healthReporter.stop();
+      if (healthReporter) healthReporter.stop();
       
-      // Wait for active sessions to complete (with timeout)
       let waitCount = 0;
-      const maxWait = 60; // 60 seconds max wait
+      const maxWait = 60;
       
       const checkAndExit = () => {
         waitCount++;
