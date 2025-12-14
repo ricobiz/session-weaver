@@ -217,64 +217,101 @@ Deno.serve(async (req) => {
       
       console.log('Starting Railway deployment from GitHub:', repoUrl);
 
-      // Step 0: Get user info and projects
-      const meData = await railwayQuery(RAILWAY_API_TOKEN, `
-        query {
-          me {
-            id
-            name
-            projects {
-              edges {
-                node {
-                  id
-                  name
+      // Initialize Supabase client to read saved config
+      const supabase = createClient(SUPABASE_URL!, SUPABASE_ANON_KEY!);
+      
+      // Step 0: Check for saved Railway config first
+      const { data: savedConfig } = await supabase
+        .from('railway_config')
+        .select('*')
+        .eq('id', 'default')
+        .single();
+      
+      let projectId: string | null = savedConfig?.project_id || null;
+      let existingServiceId: string | null = savedConfig?.service_id || null;
+      
+      console.log('Saved config:', savedConfig ? `projectId=${projectId}, serviceId=${existingServiceId}` : 'none');
+
+      // If we have a saved project, verify it still exists
+      if (projectId) {
+        try {
+          const projectCheck = await railwayQuery(RAILWAY_API_TOKEN, `
+            query($projectId: String!) {
+              project(id: $projectId) {
+                id
+                name
+              }
+            }
+          `, { projectId });
+          
+          if (!projectCheck.project) {
+            console.log('Saved project no longer exists, will create new');
+            projectId = null;
+            existingServiceId = null;
+          } else {
+            console.log('Using saved project:', projectCheck.project.name);
+          }
+        } catch (e) {
+          console.log('Could not verify saved project:', e);
+          projectId = null;
+          existingServiceId = null;
+        }
+      }
+
+      // Only if no saved project, look for existing ones or create new
+      if (!projectId) {
+        const meData = await railwayQuery(RAILWAY_API_TOKEN, `
+          query {
+            me {
+              id
+              projects {
+                edges {
+                  node {
+                    id
+                    name
+                  }
                 }
               }
             }
           }
-        }
-      `);
+        `);
 
-      const userId = meData.me?.id;
-      const existingProjects = meData.me?.projects?.edges || [];
-      console.log('User ID:', userId, 'Found', existingProjects.length, 'existing projects');
+        const existingProjects = meData.me?.projects?.edges || [];
+        console.log('Found', existingProjects.length, 'existing projects');
 
-      // Step 1: Find existing project - DO NOT create new ones
-      let projectId: string | null = null;
+        const automationProject = existingProjects.find(
+          (e: any) => e.node.name.toLowerCase().includes('session-weaver') ||
+                      e.node.name.toLowerCase().includes('runner') ||
+                      e.node.name.toLowerCase().includes('automation')
+        );
 
-      // Look for any project with runner-related name
-      const automationProject = existingProjects.find(
-        (e: any) => e.node.name.toLowerCase().includes('session-weaver') ||
-                    e.node.name.toLowerCase().includes('runner') ||
-                    e.node.name.toLowerCase().includes('automation')
-      );
-
-      if (automationProject) {
-        projectId = automationProject.node.id;
-        console.log('Using existing project:', automationProject.node.name, projectId);
-      } else if (existingProjects.length > 0) {
-        // Use the first available project if no runner project found
-        projectId = existingProjects[0].node.id;
-        console.log('Using first available project:', existingProjects[0].node.name, projectId);
-      } else {
-        // Only create if absolutely no projects exist
-        const createResult = await railwayQuery(RAILWAY_API_TOKEN, `
-          mutation($input: ProjectCreateInput!) {
-            projectCreate(input: $input) {
-              id
-              name
+        if (automationProject) {
+          projectId = automationProject.node.id;
+          console.log('Using existing project:', automationProject.node.name, projectId);
+        } else if (existingProjects.length === 0) {
+          // Only create if absolutely no projects exist
+          const createResult = await railwayQuery(RAILWAY_API_TOKEN, `
+            mutation($input: ProjectCreateInput!) {
+              projectCreate(input: $input) {
+                id
+                name
+              }
             }
-          }
-        `, {
-          input: {
-            name: 'session-weaver-runner',
-            description: 'Playwright automation runner',
-            isPublic: false,
-          }
-        });
+          `, {
+            input: {
+              name: 'session-weaver-runner',
+              description: 'Playwright automation runner',
+              isPublic: false,
+            }
+          });
 
-        projectId = createResult.projectCreate.id;
-        console.log('Created new project:', projectId);
+          projectId = createResult.projectCreate.id;
+          console.log('Created new project:', projectId);
+        } else {
+          // Use first existing project
+          projectId = existingProjects[0].node.id;
+          console.log('Using first project:', existingProjects[0].node.name);
+        }
       }
 
       // Step 2: Get environment
@@ -408,12 +445,52 @@ Deno.serve(async (req) => {
 
       console.log('Deployment initiated');
 
+      // Step 6: Get the deployment URL and save config
+      let runnerUrl = '';
+      try {
+        const deploymentData = await railwayQuery(RAILWAY_API_TOKEN, `
+          query($serviceId: String!) {
+            service(id: $serviceId) {
+              deployments(first: 1) {
+                edges {
+                  node {
+                    staticUrl
+                  }
+                }
+              }
+            }
+          }
+        `, { serviceId });
+        
+        const staticUrl = deploymentData.service?.deployments?.edges?.[0]?.node?.staticUrl;
+        if (staticUrl) {
+          runnerUrl = `https://${staticUrl}`;
+        }
+      } catch (e) {
+        console.log('Could not get deployment URL yet:', e);
+      }
+
+      // Save config to database for future reuse
+      await supabase
+        .from('railway_config')
+        .upsert({
+          id: 'default',
+          project_id: projectId,
+          service_id: serviceId,
+          environment_id: environmentId,
+          runner_url: runnerUrl,
+          updated_at: new Date().toISOString(),
+        });
+      
+      console.log('Saved Railway config to database');
+
       return new Response(
         JSON.stringify({
           success: true,
           projectId,
           serviceId,
           environmentId,
+          runnerUrl,
           repoUrl,
           message: 'Runner deployment started from GitHub repository',
           dashboardUrl: `https://railway.app/project/${projectId}`,
