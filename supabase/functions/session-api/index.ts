@@ -900,35 +900,95 @@ serve(async (req) => {
       }
     }
 
-    // POST /ai/scenario/analyze - Analyze scenario quality (Mocked - AI ready)
+    // POST /ai/scenario/analyze - REAL AI-POWERED: Analyze scenario quality
     if (req.method === 'POST' && path === '/ai/scenario/analyze') {
-      const { scenario_id } = await req.json();
+      const { scenario_id, model } = await req.json();
+      const selectedModel = model || DEFAULT_MODEL;
       
-      // Mock response - structure ready for AI
-      const mockAnalysis = {
-        scenario_id,
-        quality_score: 0.85,
-        estimated_success_rate: 0.78,
-        risk_level: 'medium',
-        risk_factors: [
-          { factor: 'Dynamic content loading', severity: 'medium', step_indices: [0, 2] },
-          { factor: 'Element visibility timing', severity: 'low', step_indices: [3] },
-        ],
-        duration_analysis: {
-          estimated_seconds: 120,
-          confidence: 0.82,
-          breakdown: 'Navigation (10s) + Interaction (80s) + Verification (30s)',
-        },
-        suggestions: [
-          { type: 'optimization', message: 'Consider adding explicit waits after navigation' },
-          { type: 'reliability', message: 'Use more specific selectors for click actions' },
-        ],
-        ai_powered: false,
-      };
+      // Fetch scenario
+      const { data: scenario } = await supabase
+        .from('scenarios')
+        .select('*')
+        .eq('id', scenario_id)
+        .single();
 
-      return new Response(JSON.stringify(mockAnalysis), {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
+      if (!scenario) {
+        return new Response(JSON.stringify({ error: 'Scenario not found' }), {
+          status: 404,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      // Build prompt for analysis
+      const steps = scenario.steps as any[];
+      const stepsDescription = steps.map((s, i) => `Step ${i+1}: ${s.action}${s.target ? ` → ${s.target}` : ''}${s.duration ? ` (${s.duration}s)` : ''}`).join('\n');
+
+      const systemPrompt = `You are an expert automation analyst. Analyze scenarios for browser automation and identify risks, quality issues, and optimization opportunities. Respond in valid JSON format only.`;
+      
+      const userPrompt = `Analyze this automation scenario for quality and risks:
+
+Scenario: ${scenario.name}
+Description: ${scenario.description || 'N/A'}
+Steps:
+${stepsDescription}
+
+Provide analysis in this exact JSON format:
+{
+  "quality_score": <0.0-1.0>,
+  "estimated_success_rate": <0.0-1.0>,
+  "risk_level": "<low|medium|high>",
+  "risk_factors": [{"factor": "<description>", "severity": "<low|medium|high>", "step_indices": [<indices>]}],
+  "duration_analysis": {"estimated_seconds": <number>, "confidence": <0.0-1.0>, "breakdown": "<explanation>"},
+  "suggestions": [{"type": "<optimization|reliability|performance>", "message": "<suggestion>"}]
+}`;
+
+      if (!OPENROUTER_API_KEY) {
+        // Fallback mock if no API key
+        return new Response(JSON.stringify({
+          scenario_id,
+          quality_score: 0.75,
+          estimated_success_rate: 0.70,
+          risk_level: 'medium',
+          risk_factors: [{ factor: 'Analysis requires AI configuration', severity: 'medium', step_indices: [] }],
+          duration_analysis: { estimated_seconds: scenario.estimated_duration_seconds || 60, confidence: 0.5, breakdown: 'Estimate based on step count' },
+          suggestions: [{ type: 'optimization', message: 'Configure OpenRouter API key for AI-powered analysis' }],
+          ai_powered: false,
+        }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      }
+
+      try {
+        const aiResponse = await callOpenRouter(selectedModel, [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userPrompt }
+        ]);
+
+        const content = aiResponse.choices?.[0]?.message?.content || '';
+        let analysis;
+        try {
+          // Extract JSON from response
+          const jsonMatch = content.match(/\{[\s\S]*\}/);
+          analysis = jsonMatch ? JSON.parse(jsonMatch[0]) : {};
+        } catch {
+          analysis = {};
+        }
+
+        return new Response(JSON.stringify({
+          scenario_id,
+          ...analysis,
+          ai_powered: true,
+          model_used: selectedModel,
+        }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      } catch (error) {
+        console.error('[AI] Scenario analyze error:', error);
+        return new Response(JSON.stringify({
+          scenario_id,
+          quality_score: 0.75,
+          risk_level: 'unknown',
+          suggestions: [],
+          ai_powered: false,
+          error: 'AI analysis failed',
+        }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      }
     }
 
     // POST /ai/scenario/suggest - Generate scenario improvements (Mocked - AI ready)

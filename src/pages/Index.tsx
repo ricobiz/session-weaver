@@ -49,7 +49,9 @@ import {
   Sparkles,
   Target,
   Eye,
-  Settings
+  Settings,
+  Cpu,
+  Shield
 } from 'lucide-react';
 import { Database } from '@/integrations/supabase/types';
 
@@ -148,11 +150,11 @@ const Index = () => {
       <Header />
       
       <main className="container mx-auto px-4 py-6">
-        {/* Stats Grid */}
-        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3 mb-6">
+        {/* Stats Grid - Operator focused */}
+        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3 mb-6">
           <StatCard
             title="Active Tasks"
-            value={stats?.activeTasks ?? 0}
+            value={tasks.filter(t => t.status === 'active').length}
             icon={Target}
             variant="primary"
           />
@@ -175,21 +177,15 @@ const Index = () => {
             variant="error"
           />
           <StatCard
-            title="Avg Time"
-            value={stats?.avgDuration ?? '0m 0s'}
-            icon={Clock}
-            variant="default"
-          />
-          <StatCard
             title="Profiles"
             value={stats?.totalProfiles ?? 0}
             icon={Users}
             variant="default"
           />
           <StatCard
-            title="Scenarios"
-            value={stats?.totalScenarios ?? 0}
-            icon={FileCode}
+            title="Runners"
+            value={runners.length}
+            icon={Cpu}
             variant="default"
           />
         </div>
