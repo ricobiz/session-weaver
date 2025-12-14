@@ -16,9 +16,12 @@ import {
   AlertTriangle,
   Loader2,
   Sparkles,
-  RefreshCw
+  RefreshCw,
+  Cloud,
+  ExternalLink
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { useToast } from '@/hooks/use-toast';
 
 interface ModuleStatus {
   name: string;
@@ -36,6 +39,13 @@ interface SetupResult {
   timestamp: string;
 }
 
+interface RailwayStatus {
+  connected: boolean;
+  user?: { email: string; name: string };
+  existingRunner?: { projectId: string; serviceId: string; name: string };
+  dashboardUrl?: string;
+}
+
 const MODULE_ICONS: Record<string, typeof Database> = {
   database: Database,
   openrouter: Bot,
@@ -43,6 +53,7 @@ const MODULE_ICONS: Record<string, typeof Database> = {
   runners: Server,
   profiles: Users,
   scenarios: FileCode,
+  railway: Cloud,
 };
 
 const MODULE_LABELS: Record<string, string> = {
@@ -52,19 +63,97 @@ const MODULE_LABELS: Record<string, string> = {
   runners: 'Runners',
   profiles: 'Profiles',
   scenarios: 'Scenarios',
+  railway: 'Railway Backend',
 };
 
 export function SystemSetup() {
+  const { toast } = useToast();
   const [isRunning, setIsRunning] = useState(false);
   const [result, setResult] = useState<SetupResult | null>(null);
   const [modules, setModules] = useState<ModuleStatus[]>([]);
   const [progress, setProgress] = useState(0);
+  
+  // Railway deployment state
+  const [railwayStatus, setRailwayStatus] = useState<RailwayStatus | null>(null);
+  const [isDeploying, setIsDeploying] = useState(false);
+  const [deployResult, setDeployResult] = useState<{ success: boolean; dashboardUrl?: string; error?: string } | null>(null);
+
+  const checkRailway = async () => {
+    try {
+      const response = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/railway-deploy`,
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ action: 'check' }),
+        }
+      );
+
+      const data = await response.json();
+      setRailwayStatus(data);
+      return data;
+    } catch (error) {
+      console.error('Railway check error:', error);
+      return null;
+    }
+  };
+
+  const deployToRailway = async () => {
+    setIsDeploying(true);
+    setDeployResult(null);
+
+    try {
+      const response = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/railway-deploy`,
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ action: 'deploy' }),
+        }
+      );
+
+      const data = await response.json();
+      setDeployResult(data);
+
+      if (data.success) {
+        toast({
+          title: 'Runner Deployed!',
+          description: 'Backend is starting on Railway. It will be online in ~2 minutes.',
+        });
+        // Update railway status
+        await checkRailway();
+      } else {
+        toast({
+          title: 'Deployment Failed',
+          description: data.error || 'Check Railway dashboard for details.',
+          variant: 'destructive',
+        });
+      }
+    } catch (error) {
+      console.error('Deploy error:', error);
+      setDeployResult({
+        success: false,
+        error: error instanceof Error ? error.message : 'Deployment failed',
+      });
+    } finally {
+      setIsDeploying(false);
+    }
+  };
 
   const runSetup = async () => {
     setIsRunning(true);
     setResult(null);
     setModules([]);
     setProgress(0);
+
+    // First check Railway
+    await checkRailway();
 
     try {
       const response = await fetch(
@@ -101,7 +190,6 @@ export function SystemSetup() {
             const data = JSON.parse(line.slice(6));
             
             if (data.module) {
-              // Update single module
               setModules(prev => {
                 const existing = prev.findIndex(m => m.name === data.module.name);
                 if (existing >= 0) {
@@ -117,7 +205,6 @@ export function SystemSetup() {
                 setProgress((completedModules / totalModules) * 100);
               }
             } else if (data.success !== undefined) {
-              // Final result
               setResult(data);
               setProgress(100);
             }
@@ -161,6 +248,8 @@ export function SystemSetup() {
   };
 
   const hasRun = result !== null || modules.length > 0;
+  const runnersModule = modules.find(m => m.name === 'runners');
+  const needsBackend = runnersModule?.status === 'warning' && !runnersModule?.details?.includes('online');
 
   return (
     <Card className="border-2 border-dashed border-primary/30 bg-gradient-to-br from-primary/5 to-transparent">
@@ -172,7 +261,7 @@ export function SystemSetup() {
           </div>
           <h2 className="text-xl font-bold mb-2">System Setup</h2>
           <p className="text-sm text-muted-foreground max-w-md mx-auto">
-            One-click configuration. The system will verify all modules, optimize AI models, and prepare for automation.
+            One-click configuration. Verify modules, optimize AI, and deploy backend automatically.
           </p>
         </div>
 
@@ -239,6 +328,98 @@ export function SystemSetup() {
                 </div>
               );
             })}
+          </div>
+        )}
+
+        {/* Railway Backend Deploy Section */}
+        {hasRun && needsBackend && (
+          <div className="mt-6 p-4 rounded-lg border-2 border-dashed border-blue-500/30 bg-blue-500/5">
+            <div className="flex items-center gap-2 mb-3">
+              <Cloud className="w-5 h-5 text-blue-500" />
+              <span className="font-medium">Deploy Backend Runner</span>
+            </div>
+            
+            <p className="text-xs text-muted-foreground mb-4">
+              No runners detected. Deploy a Playwright runner to Railway with one click.
+            </p>
+
+            {railwayStatus?.connected ? (
+              <div className="space-y-3">
+                <div className="flex items-center gap-2 text-xs text-green-500">
+                  <Check className="w-3 h-3" />
+                  Connected as {railwayStatus.user?.email}
+                </div>
+
+                {railwayStatus.existingRunner ? (
+                  <div className="p-2 rounded bg-muted/50 text-xs">
+                    <span className="text-muted-foreground">Existing runner: </span>
+                    <span className="font-medium">{railwayStatus.existingRunner.name}</span>
+                  </div>
+                ) : null}
+
+                <Button
+                  onClick={deployToRailway}
+                  disabled={isDeploying}
+                  className="w-full gap-2"
+                >
+                  {isDeploying ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      Deploying...
+                    </>
+                  ) : (
+                    <>
+                      <Rocket className="w-4 h-4" />
+                      {railwayStatus.existingRunner ? 'Redeploy Runner' : 'Deploy Runner'}
+                    </>
+                  )}
+                </Button>
+              </div>
+            ) : railwayStatus === null ? (
+              <Button
+                variant="outline"
+                onClick={checkRailway}
+                className="w-full gap-2"
+              >
+                <RefreshCw className="w-4 h-4" />
+                Check Railway Connection
+              </Button>
+            ) : (
+              <div className="space-y-3">
+                <div className="flex items-center gap-2 text-xs text-yellow-500">
+                  <AlertTriangle className="w-3 h-3" />
+                  Railway API token not configured
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Add RAILWAY_API_TOKEN in Settings → Secrets to enable auto-deploy.
+                </p>
+              </div>
+            )}
+
+            {deployResult?.success && (
+              <div className="mt-3 p-2 rounded bg-green-500/10 border border-green-500/30">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-green-500">Deployment started!</span>
+                  {deployResult.dashboardUrl && (
+                    <a
+                      href={deployResult.dashboardUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center gap-1 text-xs text-primary hover:underline"
+                    >
+                      Open Railway
+                      <ExternalLink className="w-3 h-3" />
+                    </a>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {deployResult?.error && (
+              <div className="mt-3 p-2 rounded bg-red-500/10 border border-red-500/30">
+                <span className="text-xs text-red-500">{deployResult.error}</span>
+              </div>
+            )}
           </div>
         )}
 

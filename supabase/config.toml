@@ -47,3 +47,6 @@ verify_jwt = false
 
 [functions.system-setup]
 verify_jwt = false
+
+[functions.railway-deploy]
+verify_jwt = false
