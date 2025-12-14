@@ -2,7 +2,7 @@ import { ActionRegistry, ActionHandler } from '../types';
 import { openAction } from './open';
 import { waitAction } from './wait';
 import { scrollAction } from './scroll';
-import { clickAction, smartClickAction } from './click';
+import { clickAction } from './click';
 import { playAction } from './play';
 import { likeAction } from './like';
 import { commentAction } from './comment';
@@ -11,7 +11,8 @@ import { commentAction } from './comment';
  * Action Registry
  * 
  * Maps action names to their handler functions.
- * Extend this registry to add custom actions.
+ * Note: Vision-based clicking is automatic fallback in click action.
+ * No special operator configuration needed.
  */
 const actionRegistry: ActionRegistry = {
   open: openAction,
@@ -24,10 +25,8 @@ const actionRegistry: ActionRegistry = {
   
   scroll: scrollAction,
   
-  click: clickAction,
-  tap: clickAction,         // Alias
-  'smart-click': smartClickAction, // Visual-aware click
-  'visual-click': smartClickAction, // Alias for smart click
+  click: clickAction,   // Automatic vision fallback if selector fails
+  tap: clickAction,     // Alias
   
   play: playAction,
   listen: playAction,   // Alias
