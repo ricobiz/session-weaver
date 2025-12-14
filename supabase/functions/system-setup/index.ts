@@ -90,13 +90,15 @@ Deno.serve(async (req) => {
           
           if (response.ok) {
             const data = await response.json();
-            const balance = data.data?.limit_remaining;
+            // OpenRouter returns limit_remaining in dollars (not cents)
+            const balance = data.data?.limit_remaining ?? data.data?.usage ?? 0;
+            const balanceDisplay = typeof balance === 'number' ? balance.toFixed(2) : '0.00';
             
             modules.push({
               name: 'openrouter',
-              status: balance > 0 ? 'success' : 'warning',
-              message: balance > 0 ? 'OpenRouter connected' : 'Low balance',
-              details: balance !== undefined ? `$${(balance / 100).toFixed(2)} remaining` : 'Key valid',
+              status: balance > 0.01 ? 'success' : 'warning',
+              message: balance > 0.01 ? 'OpenRouter connected' : 'Low balance',
+              details: `$${balanceDisplay} remaining`,
             });
           } else {
             modules.push({
