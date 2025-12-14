@@ -24,6 +24,10 @@ export interface ValidationResult {
 export class ApiClient {
   private baseUrl: string;
   private runnerId: string;
+  private lastRequestTime = 0;
+  private minRequestInterval = 100; // ms between requests
+  private backoffUntil = 0;
+  private backoffMultiplier = 1;
 
   constructor(baseUrl: string, runnerId: string) {
     this.baseUrl = baseUrl.replace(/\/$/, '');
@@ -37,6 +41,21 @@ export class ApiClient {
   ): Promise<T | null> {
     const url = `${this.baseUrl}${path}`;
     
+    // Rate limiting: wait if we're in backoff period
+    const now = Date.now();
+    if (now < this.backoffUntil) {
+      const waitTime = this.backoffUntil - now;
+      log('debug', `Rate limited, waiting ${waitTime}ms`);
+      await new Promise(resolve => setTimeout(resolve, waitTime));
+    }
+    
+    // Throttle requests
+    const timeSinceLastRequest = now - this.lastRequestTime;
+    if (timeSinceLastRequest < this.minRequestInterval) {
+      await new Promise(resolve => setTimeout(resolve, this.minRequestInterval - timeSinceLastRequest));
+    }
+    this.lastRequestTime = Date.now();
+    
     try {
       const response = await fetch(url, {
         method,
@@ -48,6 +67,16 @@ export class ApiClient {
       });
 
       if (response.status === 204) {
+        this.resetBackoff();
+        return null;
+      }
+
+      // Handle rate limiting (429)
+      if (response.status === 429) {
+        const retryAfter = parseInt(response.headers.get('Retry-After') || '5', 10);
+        this.backoffMultiplier = Math.min(this.backoffMultiplier * 2, 32);
+        this.backoffUntil = Date.now() + (retryAfter * 1000 * this.backoffMultiplier);
+        log('warning', `Rate limited (429), backing off for ${retryAfter * this.backoffMultiplier}s`);
         return null;
       }
 
@@ -57,11 +86,17 @@ export class ApiClient {
         return null;
       }
 
+      this.resetBackoff();
       return await response.json();
     } catch (error) {
       log('error', `API request failed: ${path}`, { error: String(error) });
       return null;
     }
+  }
+
+  private resetBackoff(): void {
+    this.backoffMultiplier = 1;
+    this.backoffUntil = 0;
   }
 
   // Poll for next available job

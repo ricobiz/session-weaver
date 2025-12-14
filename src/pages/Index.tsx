@@ -21,6 +21,7 @@ import { GeneratedScenarioPreview } from '@/components/GeneratedScenarioPreview'
 import { AISettingsPanel } from '@/components/AISettingsPanel';
 import { OpenRouterBalance } from '@/components/OpenRouterBalance';
 import { RunnerStatus } from '@/components/RunnerStatus';
+import { RunnerTestPanel } from '@/components/RunnerTestPanel';
 import { SystemSetup } from '@/components/SystemSetup';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -572,7 +573,10 @@ const Index = () => {
             </div>
             
             {rightPanelView === 'setup' && (
-              <SystemSetup />
+              <div className="space-y-4">
+                <SystemSetup />
+                <RunnerTestPanel />
+              </div>
             )}
 
             {rightPanelView === 'live' && (
