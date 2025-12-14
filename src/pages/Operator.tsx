@@ -297,6 +297,50 @@ const Operator = () => {
     refetchInterval: 3000,
   });
 
+  // Fetch ALL tasks (including completed)
+  const { data: allTasks = [], refetch: refetchAllTasks } = useQuery({
+    queryKey: ['operator-all-tasks'],
+    queryFn: async () => {
+      const { data: tasks, error } = await supabase
+        .from('tasks')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(50);
+
+      if (error) throw error;
+      
+      const taskSummaries: TaskSummary[] = await Promise.all(
+        (tasks || []).map(async (task) => {
+          const { data: sessions } = await supabase
+            .from('sessions')
+            .select('status')
+            .eq('task_id', task.id);
+          
+          const completed = sessions?.filter(s => s.status === 'success').length || 0;
+          const failed = sessions?.filter(s => s.status === 'error').length || 0;
+          const running = sessions?.filter(s => s.status === 'running').length || 0;
+          const total = sessions?.length || 0;
+          const progress = total > 0 ? Math.round((completed / total) * 100) : 0;
+          
+          return {
+            id: task.id,
+            name: task.name,
+            status: task.status,
+            progress,
+            sessionsTotal: total,
+            sessionsCompleted: completed,
+            sessionsFailed: failed,
+            sessionsRunning: running,
+            startedAt: task.started_at,
+          };
+        })
+      );
+      
+      return taskSummaries;
+    },
+    refetchInterval: 10000,
+  });
+
   // Fetch active sessions
   const { data: activeSessions = [], refetch: refetchSessions } = useQuery({
     queryKey: ['operator-sessions'],
@@ -600,17 +644,44 @@ const Operator = () => {
 
   const handleDeleteTask = async (taskId: string) => {
     try {
-      // First cancel all sessions
-      await supabase.from('sessions').update({ status: 'cancelled' }).eq('task_id', taskId);
+      // First delete all sessions related to this task
+      await supabase.from('sessions').delete().eq('task_id', taskId);
       // Delete task
       await supabase.from('tasks').delete().eq('id', taskId);
       addMessage({ type: 'system', content: 'Task deleted' });
       refetchTasks();
+      refetchAllTasks();
       refetchSessions();
     } catch {
       toast({ title: 'Failed to delete task', variant: 'destructive' });
     }
   };
+
+  const handleRestartTask = async (taskId: string) => {
+    try {
+      await supabase.from('tasks').update({ 
+        status: 'pending', 
+        started_at: null, 
+        completed_at: null,
+        sessions_completed: 0,
+        sessions_failed: 0 
+      }).eq('id', taskId);
+      addMessage({ type: 'system', content: 'Task restarted' });
+      refetchTasks();
+      refetchAllTasks();
+    } catch {
+      toast({ title: 'Failed to restart task', variant: 'destructive' });
+    }
+  };
+
+  // Filter completed/cancelled tasks for history
+  const completedTasks = allTasks.filter(t => 
+    ['completed', 'cancelled', 'failed'].includes(t.status) || 
+    (t.status !== 'active' && t.status !== 'pending' && t.status !== 'paused' && t.progress === 100)
+  );
+
+  // State for showing task history panel
+  const [showTaskHistory, setShowTaskHistory] = useState(false);
 
   const handleDuplicateTask = async (taskId: string) => {
     try {
@@ -880,6 +951,96 @@ const Operator = () => {
                     </div>
                   </div>
                 ))}
+              </div>
+            )}
+
+            {/* Task History Toggle & List */}
+            {allTasks.length > 0 && (
+              <div className="space-y-2">
+                <button
+                  onClick={() => setShowTaskHistory(!showTaskHistory)}
+                  className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-muted-foreground/60 font-medium hover:text-muted-foreground transition-colors"
+                >
+                  <History className="w-3 h-3" />
+                  Task History ({allTasks.length})
+                  <ChevronDown className={`w-3 h-3 transition-transform ${showTaskHistory ? 'rotate-180' : ''}`} />
+                </button>
+                
+                {showTaskHistory && (
+                  <div className="space-y-1.5 max-h-[300px] overflow-y-auto">
+                    {allTasks.map((task) => (
+                      <div 
+                        key={task.id} 
+                        className={`flex items-center gap-2 px-3 py-2 rounded-lg border ${
+                          task.status === 'completed' || task.progress === 100 
+                            ? 'bg-emerald-500/5 border-emerald-500/20' 
+                            : task.status === 'cancelled' || task.status === 'failed'
+                            ? 'bg-destructive/5 border-destructive/20'
+                            : 'bg-card/40 border-border/30'
+                        }`}
+                      >
+                        {/* Status Icon */}
+                        {task.status === 'completed' || task.progress === 100 ? (
+                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 flex-shrink-0" />
+                        ) : task.status === 'cancelled' ? (
+                          <XCircle className="w-3.5 h-3.5 text-destructive flex-shrink-0" />
+                        ) : task.status === 'failed' ? (
+                          <XCircle className="w-3.5 h-3.5 text-destructive flex-shrink-0" />
+                        ) : task.status === 'active' || task.status === 'pending' ? (
+                          <Activity className="w-3.5 h-3.5 text-primary flex-shrink-0" />
+                        ) : (
+                          <Clock className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" />
+                        )}
+                        
+                        {/* Task Name */}
+                        <span className="text-xs font-medium truncate flex-1">{task.name}</span>
+                        
+                        {/* Stats */}
+                        <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
+                          <span className="text-emerald-500">{task.sessionsCompleted}</span>
+                          {task.sessionsFailed > 0 && (
+                            <span className="text-destructive">/{task.sessionsFailed}</span>
+                          )}
+                          <span>/{task.sessionsTotal}</span>
+                        </div>
+                        
+                        {/* Actions */}
+                        <div className="flex items-center gap-0.5">
+                          {/* Restart */}
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => handleRestartTask(task.id)}
+                            className="h-5 w-5 p-0 hover:bg-primary/10 hover:text-primary"
+                            title="Restart"
+                          >
+                            <RotateCw className="w-2.5 h-2.5" />
+                          </Button>
+                          {/* Duplicate */}
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => handleDuplicateTask(task.id)}
+                            className="h-5 w-5 p-0 hover:bg-primary/10 hover:text-primary"
+                            title="Duplicate"
+                          >
+                            <Copy className="w-2.5 h-2.5" />
+                          </Button>
+                          {/* Delete */}
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => handleDeleteTask(task.id)}
+                            className="h-5 w-5 p-0 hover:bg-destructive/10 hover:text-destructive"
+                            title="Delete"
+                          >
+                            <Trash2 className="w-2.5 h-2.5" />
+                          </Button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
 
