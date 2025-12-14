@@ -197,17 +197,25 @@ Deno.serve(async (req) => {
         throw new Error('Could not determine workspace ID');
       }
 
-      // Step 1: Check for existing project or create new
-      let projectId: string;
+      // Step 1: Find existing project - DO NOT create new ones
+      let projectId: string | null = null;
 
+      // Look for any project with runner-related name
       const automationProject = existingProjects.find(
-        (e: any) => e.node.name === 'Session-Weaver-Runner'
+        (e: any) => e.node.name.toLowerCase().includes('session-weaver') ||
+                    e.node.name.toLowerCase().includes('runner') ||
+                    e.node.name.toLowerCase().includes('automation')
       );
 
       if (automationProject) {
         projectId = automationProject.node.id;
-        console.log('Using existing project:', projectId);
+        console.log('Using existing project:', automationProject.node.name, projectId);
+      } else if (existingProjects.length > 0) {
+        // Use the first available project if no runner project found
+        projectId = existingProjects[0].node.id;
+        console.log('Using first available project:', existingProjects[0].node.name, projectId);
       } else {
+        // Only create if absolutely no projects exist
         const createResult = await railwayQuery(RAILWAY_API_TOKEN, `
           mutation($input: ProjectCreateInput!) {
             projectCreate(input: $input) {
@@ -224,7 +232,7 @@ Deno.serve(async (req) => {
         });
 
         projectId = createResult.projectCreate.id;
-        console.log('Created new project:', projectId);
+        console.log('Created new project (no existing projects found):', projectId);
       }
 
       // Step 2: Get environment
