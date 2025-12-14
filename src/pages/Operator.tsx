@@ -3,7 +3,6 @@ import { Link } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
-import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
 import { toast } from '@/hooks/use-toast';
@@ -19,7 +18,6 @@ import {
   Activity,
   Bot,
   Sparkles,
-  Wifi,
   WifiOff,
   Server,
   Image,
@@ -27,8 +25,11 @@ import {
   ExternalLink,
   RotateCw,
   Zap,
+  Brain,
 } from 'lucide-react';
 import { OperatorBalanceHeader } from '@/components/operator/OperatorBalanceHeader';
+import { TaskPlanner } from '@/components/TaskPlanner';
+import { TaskSupervisor } from '@/components/TaskSupervisor';
 
 interface TaskSummary {
   id: string;
@@ -66,11 +67,13 @@ interface RunnerHealth {
 
 interface ChatMessage {
   id: string;
-  type: 'user' | 'system' | 'screenshot' | 'error' | 'success';
+  type: 'user' | 'system' | 'screenshot' | 'error' | 'success' | 'planning' | 'supervisor';
   content: string;
   timestamp: Date;
   sessionId?: string;
   imageUrl?: string;
+  taskId?: string;
+  userCommand?: string;
 }
 
 const Operator = () => {
@@ -205,79 +208,79 @@ const Operator = () => {
     
     const userCommand = command;
     setCommand('');
+    
+    // Add user message
     addMessage({ type: 'user', content: userCommand });
     
+    // Add planning message - this will show the TaskPlanner component
+    const planMsgId = Math.random().toString(36).slice(2);
+    setChatMessages(prev => [...prev, {
+      id: planMsgId,
+      type: 'planning',
+      content: userCommand,
+      userCommand,
+      timestamp: new Date(),
+    }]);
+  };
+
+  const handlePlanApproved = async (taskId: string, _plan: any) => {
+    // Remove planning message
+    setChatMessages(prev => prev.filter(m => m.type !== 'planning'));
+    
     setIsProcessing(true);
-    addMessage({ type: 'system', content: 'Planning scenario...' });
-
+    
     try {
-      const lowerCommand = userCommand.toLowerCase();
-      
-      let platform = 'web';
-      if (lowerCommand.includes('spotify')) platform = 'spotify';
-      else if (lowerCommand.includes('youtube')) platform = 'youtube';
-      else if (lowerCommand.includes('soundcloud')) platform = 'soundcloud';
-      else if (lowerCommand.includes('tiktok')) platform = 'tiktok';
-      
-      const urlMatch = userCommand.match(/https?:\/\/[^\s]+/);
-      const targetUrl = urlMatch ? urlMatch[0] : null;
-      
-      const profileMatch = userCommand.match(/(\d+)\s*(?:profiles?|accounts?|users?)/i);
-      const runMatch = userCommand.match(/(\d+)\s*(?:times?|runs?|x)/i);
-      const profileCount = profileMatch ? parseInt(profileMatch[1]) : 3;
-      const runCount = runMatch ? parseInt(runMatch[1]) : 1;
-
+      // Start task execution
       const response = await fetch(
-        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/session-api/planner/execute`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            goal: userCommand,
-            platform,
-            input: targetUrl,
-            model: selectedModel,
-            profile_count: profileCount,
-            run_count: runCount,
-            constraints: {
-              min_watch_percent: 70,
-              max_watch_percent: 100,
-              human_behavior: true,
-            },
-          }),
-        }
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/session-api/tasks/${taskId}/start`,
+        { method: 'POST', headers: { 'Content-Type': 'application/json' } }
       );
 
-      const result = await response.json();
-
-      if (!response.ok || result.error) {
-        throw new Error(result.error || 'Planning failed');
+      if (!response.ok) {
+        throw new Error('Failed to start task');
       }
 
-      // Remove "Planning..." message and add success
-      setChatMessages(prev => prev.filter(m => m.content !== 'Planning scenario...'));
-      addMessage({ 
-        type: 'success', 
-        content: `✓ Task started: ${result.sessions_created} sessions queued` 
-      });
+      const result = await response.json();
       
+      // Add supervisor message
+      const task = await supabase.from('tasks').select('name').eq('id', taskId).single();
+      setChatMessages(prev => [...prev, {
+        id: Math.random().toString(36).slice(2),
+        type: 'supervisor',
+        content: task.data?.name || 'Task',
+        taskId,
+        timestamp: new Date(),
+      }]);
+
+      toast({ title: 'Task started', description: `${result.created} sessions queued` });
       refetchTasks();
       refetchSessions();
 
     } catch (error) {
-      setChatMessages(prev => prev.filter(m => m.content !== 'Planning scenario...'));
       addMessage({ 
         type: 'error', 
-        content: error instanceof Error ? error.message : 'Unknown error' 
-      });
-      toast({ 
-        title: 'Failed', 
-        description: error instanceof Error ? error.message : 'Unknown error',
-        variant: 'destructive' 
+        content: error instanceof Error ? error.message : 'Failed to start task' 
       });
     } finally {
       setIsProcessing(false);
     }
+  };
+
+  const handlePlanCancelled = () => {
+    setChatMessages(prev => prev.filter(m => m.type !== 'planning'));
+  };
+
+  const handleTaskComplete = (taskId: string, success: boolean) => {
+    // Remove supervisor message
+    setChatMessages(prev => prev.filter(m => m.taskId !== taskId));
+    
+    addMessage({
+      type: success ? 'success' : 'error',
+      content: success ? 'Task completed successfully!' : 'Task finished with some failures',
+    });
+
+    refetchTasks();
+    refetchSessions();
   };
 
   const requestScreenshot = async (sessionId: string) => {
@@ -495,61 +498,102 @@ const Operator = () => {
 
             {/* Chat Messages */}
             {chatMessages.map((msg) => (
-              <div key={msg.id} className={`flex gap-2 ${msg.type === 'user' ? 'justify-end' : 'justify-start'}`}>
-                {msg.type !== 'user' && (
-                  <div className={`w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 ${
-                    msg.type === 'error' ? 'bg-destructive/10' :
-                    msg.type === 'success' ? 'bg-emerald-500/10' :
-                    msg.type === 'screenshot' ? 'bg-primary/10' :
-                    'bg-muted/50'
-                  }`}>
-                    {msg.type === 'error' ? <XCircle className="w-3 h-3 text-destructive" /> :
-                     msg.type === 'success' ? <CheckCircle2 className="w-3 h-3 text-emerald-500" /> :
-                     msg.type === 'screenshot' ? <Image className="w-3 h-3 text-primary" /> :
-                     <Sparkles className="w-3 h-3 text-muted-foreground" />}
+              <div key={msg.id} className="space-y-2">
+                {/* Planning message - shows TaskPlanner */}
+                {msg.type === 'planning' && msg.userCommand && (
+                  <div className="flex gap-2 justify-start">
+                    <div className="w-6 h-6 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
+                      <Brain className="w-3 h-3 text-primary" />
+                    </div>
+                    <div className="max-w-[90%]">
+                      <TaskPlanner
+                        userCommand={msg.userCommand}
+                        onApprove={handlePlanApproved}
+                        onCancel={handlePlanCancelled}
+                      />
+                    </div>
                   </div>
                 )}
-                
-                <div className={`max-w-[85%] ${msg.type === 'user' ? 'order-first' : ''}`}>
-                  <div className={`px-3 py-2 rounded-2xl text-sm ${
-                    msg.type === 'user' ? 'bg-primary text-primary-foreground rounded-br-md' :
-                    msg.type === 'error' ? 'bg-destructive/10 text-destructive border border-destructive/20 rounded-bl-md' :
-                    msg.type === 'success' ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 rounded-bl-md' :
-                    'bg-card border border-border/50 rounded-bl-md'
-                  }`}>
-                    {msg.content}
-                  </div>
-                  
-                  {msg.imageUrl && (
-                    <div className="mt-2 rounded-lg overflow-hidden border border-border/50 max-w-[300px]">
-                      <img 
-                        src={msg.imageUrl} 
-                        alt="Session screenshot" 
-                        className="w-full h-auto"
-                        loading="lazy"
-                      />
-                      <div className="p-2 bg-card/80 flex items-center justify-between text-[10px] text-muted-foreground">
-                        <span>Session: {msg.sessionId?.slice(0, 8)}</span>
-                        <a 
-                          href={msg.imageUrl} 
-                          target="_blank" 
-                          rel="noopener noreferrer"
-                          className="hover:text-primary"
-                        >
-                          <ExternalLink className="w-3 h-3" />
-                        </a>
-                      </div>
+
+                {/* Supervisor message - shows TaskSupervisor */}
+                {msg.type === 'supervisor' && msg.taskId && (
+                  <div className="flex gap-2 justify-start">
+                    <div className="w-6 h-6 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
+                      <Brain className="w-3 h-3 text-primary" />
                     </div>
-                  )}
-                  
-                  <span className="text-[9px] text-muted-foreground/50 px-1 mt-0.5 block">
-                    {msg.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                  </span>
-                </div>
-                
-                {msg.type === 'user' && (
-                  <div className="w-6 h-6 rounded-full bg-primary/20 flex items-center justify-center flex-shrink-0">
-                    <User className="w-3 h-3 text-primary" />
+                    <div className="max-w-[90%] w-full">
+                      <TaskSupervisor
+                        taskId={msg.taskId}
+                        taskName={msg.content}
+                        onComplete={(success) => handleTaskComplete(msg.taskId!, success)}
+                        onRequestInput={async (question) => {
+                          // This could be enhanced with a modal or inline input
+                          return window.prompt(question) || '';
+                        }}
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {/* Regular messages */}
+                {msg.type !== 'planning' && msg.type !== 'supervisor' && (
+                  <div className={`flex gap-2 ${msg.type === 'user' ? 'justify-end' : 'justify-start'}`}>
+                    {msg.type !== 'user' && (
+                      <div className={`w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 ${
+                        msg.type === 'error' ? 'bg-destructive/10' :
+                        msg.type === 'success' ? 'bg-emerald-500/10' :
+                        msg.type === 'screenshot' ? 'bg-primary/10' :
+                        'bg-muted/50'
+                      }`}>
+                        {msg.type === 'error' ? <XCircle className="w-3 h-3 text-destructive" /> :
+                         msg.type === 'success' ? <CheckCircle2 className="w-3 h-3 text-emerald-500" /> :
+                         msg.type === 'screenshot' ? <Image className="w-3 h-3 text-primary" /> :
+                         <Sparkles className="w-3 h-3 text-muted-foreground" />}
+                      </div>
+                    )}
+                    
+                    <div className={`max-w-[85%] ${msg.type === 'user' ? 'order-first' : ''}`}>
+                      <div className={`px-3 py-2 rounded-2xl text-sm ${
+                        msg.type === 'user' ? 'bg-primary text-primary-foreground rounded-br-md' :
+                        msg.type === 'error' ? 'bg-destructive/10 text-destructive border border-destructive/20 rounded-bl-md' :
+                        msg.type === 'success' ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 rounded-bl-md' :
+                        'bg-card border border-border/50 rounded-bl-md'
+                      }`}>
+                        {msg.content}
+                      </div>
+                      
+                      {msg.imageUrl && (
+                        <div className="mt-2 rounded-lg overflow-hidden border border-border/50 max-w-[300px]">
+                          <img 
+                            src={msg.imageUrl} 
+                            alt="Session screenshot" 
+                            className="w-full h-auto"
+                            loading="lazy"
+                          />
+                          <div className="p-2 bg-card/80 flex items-center justify-between text-[10px] text-muted-foreground">
+                            <span>Session: {msg.sessionId?.slice(0, 8)}</span>
+                            <a 
+                              href={msg.imageUrl} 
+                              target="_blank" 
+                              rel="noopener noreferrer"
+                              className="hover:text-primary"
+                            >
+                              <ExternalLink className="w-3 h-3" />
+                            </a>
+                          </div>
+                        </div>
+                      )}
+                      
+                      <span className="text-[9px] text-muted-foreground/50 px-1 mt-0.5 block">
+                        {msg.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      </span>
+                    </div>
+                    
+                    {msg.type === 'user' && (
+                      <div className="w-6 h-6 rounded-full bg-primary/20 flex items-center justify-center flex-shrink-0">
+                        <User className="w-3 h-3 text-primary" />
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
