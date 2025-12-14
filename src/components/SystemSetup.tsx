@@ -21,7 +21,8 @@ import {
   RefreshCw,
   Cloud,
   ExternalLink,
-  Github
+  Github,
+  Trash2
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useToast } from '@/hooks/use-toast';
@@ -45,6 +46,7 @@ interface SetupResult {
 interface RailwayStatus {
   connected: boolean;
   user?: { email: string; name: string };
+  projects?: Array<{ id: string; name: string; services: Array<{ id: string; name: string }> }>;
   existingRunner?: { projectId: string; serviceId: string; name: string };
   dashboardUrl?: string;
 }
@@ -81,6 +83,8 @@ export function SystemSetup() {
   const [isDeploying, setIsDeploying] = useState(false);
   const [deployResult, setDeployResult] = useState<{ success: boolean; dashboardUrl?: string; error?: string } | null>(null);
   const [repoUrl, setRepoUrl] = useState('');
+  const [deletingProjects, setDeletingProjects] = useState<Set<string>>(new Set());
+  const [showProjects, setShowProjects] = useState(false);
 
   const checkRailway = async () => {
     try {
@@ -156,6 +160,54 @@ export function SystemSetup() {
       });
     } finally {
       setIsDeploying(false);
+    }
+  };
+
+  const deleteProject = async (projectId: string) => {
+    setDeletingProjects(prev => new Set(prev).add(projectId));
+    
+    try {
+      const response = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/railway-deploy`,
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ action: 'delete-project', projectId }),
+        }
+      );
+
+      const data = await response.json();
+      
+      if (data.success) {
+        toast({
+          title: 'Project Deleted',
+          description: 'Railway project has been removed.',
+        });
+        // Refresh list
+        await checkRailway();
+      } else {
+        toast({
+          title: 'Delete Failed',
+          description: data.error || 'Could not delete project.',
+          variant: 'destructive',
+        });
+      }
+    } catch (error) {
+      console.error('Delete error:', error);
+      toast({
+        title: 'Delete Failed',
+        description: error instanceof Error ? error.message : 'Failed to delete project',
+        variant: 'destructive',
+      });
+    } finally {
+      setDeletingProjects(prev => {
+        const next = new Set(prev);
+        next.delete(projectId);
+        return next;
+      });
     }
   };
 
@@ -380,9 +432,52 @@ export function SystemSetup() {
                   </p>
                 </div>
 
+                {/* Existing Projects Management */}
+                {railwayStatus.projects && railwayStatus.projects.length > 0 && (
+                  <div className="space-y-2">
+                    <button
+                      onClick={() => setShowProjects(!showProjects)}
+                      className="flex items-center gap-2 text-xs text-muted-foreground hover:text-foreground transition-colors"
+                    >
+                      <span>{showProjects ? '▼' : '▶'}</span>
+                      Railway Projects ({railwayStatus.projects.length})
+                    </button>
+                    
+                    {showProjects && (
+                      <div className="space-y-2 pl-4 border-l-2 border-muted">
+                        {railwayStatus.projects.map((project) => (
+                          <div key={project.id} className="p-2 rounded bg-muted/30 text-xs">
+                            <div className="flex items-center justify-between mb-1">
+                              <span className="font-medium truncate flex-1">{project.name}</span>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-6 w-6 p-0 text-red-500 hover:text-red-600 hover:bg-red-500/10"
+                                onClick={() => deleteProject(project.id)}
+                                disabled={deletingProjects.has(project.id)}
+                              >
+                                {deletingProjects.has(project.id) ? (
+                                  <Loader2 className="w-3 h-3 animate-spin" />
+                                ) : (
+                                  <Trash2 className="w-3 h-3" />
+                                )}
+                              </Button>
+                            </div>
+                            {project.services.length > 0 && (
+                              <div className="text-[10px] text-muted-foreground">
+                                Services: {project.services.map(s => s.name).join(', ')}
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+
                 {railwayStatus.existingRunner && (
                   <div className="p-2 rounded bg-muted/50 text-xs">
-                    <span className="text-muted-foreground">Existing Runner: </span>
+                    <span className="text-muted-foreground">Active Runner: </span>
                     <span className="font-medium">{railwayStatus.existingRunner.name}</span>
                   </div>
                 )}

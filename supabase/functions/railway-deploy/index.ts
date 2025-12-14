@@ -6,8 +6,9 @@ const corsHeaders = {
 };
 
 interface DeployRequest {
-  action: 'check' | 'deploy' | 'status' | 'logs';
+  action: 'check' | 'deploy' | 'status' | 'logs' | 'delete-project' | 'delete-service';
   serviceId?: string;
+  projectId?: string;
   repoUrl?: string;
 }
 
@@ -420,6 +421,52 @@ Deno.serve(async (req) => {
             status: latestDeployment.status,
             createdAt: latestDeployment.createdAt,
           } : null,
+        }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // ========================================
+    // DELETE-PROJECT - Delete entire project
+    // ========================================
+    if (action === 'delete-project' && body.projectId) {
+      console.log('Deleting project:', body.projectId);
+      
+      await railwayQuery(RAILWAY_API_TOKEN, `
+        mutation($id: String!) {
+          projectDelete(id: $id)
+        }
+      `, { id: body.projectId });
+
+      console.log('Project deleted successfully');
+
+      return new Response(
+        JSON.stringify({
+          success: true,
+          message: 'Project deleted successfully',
+        }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // ========================================
+    // DELETE-SERVICE - Delete a service
+    // ========================================
+    if (action === 'delete-service' && body.serviceId) {
+      console.log('Deleting service:', body.serviceId);
+      
+      await railwayQuery(RAILWAY_API_TOKEN, `
+        mutation($id: String!) {
+          serviceDelete(id: $id)
+        }
+      `, { id: body.serviceId });
+
+      console.log('Service deleted successfully');
+
+      return new Response(
+        JSON.stringify({
+          success: true,
+          message: 'Service deleted successfully',
         }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
