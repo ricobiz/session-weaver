@@ -3,6 +3,8 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { 
   Rocket, 
   Database, 
@@ -18,7 +20,8 @@ import {
   Sparkles,
   RefreshCw,
   Cloud,
-  ExternalLink
+  ExternalLink,
+  Github
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useToast } from '@/hooks/use-toast';
@@ -77,6 +80,7 @@ export function SystemSetup() {
   const [railwayStatus, setRailwayStatus] = useState<RailwayStatus | null>(null);
   const [isDeploying, setIsDeploying] = useState(false);
   const [deployResult, setDeployResult] = useState<{ success: boolean; dashboardUrl?: string; error?: string } | null>(null);
+  const [repoUrl, setRepoUrl] = useState('');
 
   const checkRailway = async () => {
     try {
@@ -102,6 +106,15 @@ export function SystemSetup() {
   };
 
   const deployToRailway = async () => {
+    if (!repoUrl.trim()) {
+      toast({
+        title: 'Repository URL Required',
+        description: 'Please enter your GitHub repository URL to deploy.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
     setIsDeploying(true);
     setDeployResult(null);
 
@@ -114,7 +127,7 @@ export function SystemSetup() {
             'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
             'Content-Type': 'application/json',
           },
-          body: JSON.stringify({ action: 'deploy' }),
+          body: JSON.stringify({ action: 'deploy', repoUrl: repoUrl.trim() }),
         }
       );
 
@@ -350,21 +363,33 @@ export function SystemSetup() {
                   Railway: {railwayStatus.user?.email}
                 </div>
 
-                <div className="p-2 rounded bg-muted/50 text-xs">
-                  <span className="text-muted-foreground">Source: </span>
-                  <span className="font-medium text-primary">GitHub → ricobiz/session-weaver</span>
+                <div className="space-y-2">
+                  <Label htmlFor="repoUrl" className="text-xs flex items-center gap-1">
+                    <Github className="w-3 h-3" />
+                    GitHub Repository URL
+                  </Label>
+                  <Input
+                    id="repoUrl"
+                    placeholder="https://github.com/username/repo"
+                    value={repoUrl}
+                    onChange={(e) => setRepoUrl(e.target.value)}
+                    className="text-sm"
+                  />
+                  <p className="text-[10px] text-muted-foreground">
+                    Enter the URL of your public GitHub repository containing the runner code
+                  </p>
                 </div>
 
                 {railwayStatus.existingRunner && (
                   <div className="p-2 rounded bg-muted/50 text-xs">
-                    <span className="text-muted-foreground">Runner: </span>
+                    <span className="text-muted-foreground">Existing Runner: </span>
                     <span className="font-medium">{railwayStatus.existingRunner.name}</span>
                   </div>
                 )}
 
                 <Button
                   onClick={deployToRailway}
-                  disabled={isDeploying || deployResult?.success}
+                  disabled={isDeploying || deployResult?.success || !repoUrl.trim()}
                   className="w-full gap-2"
                 >
                   {isDeploying ? (

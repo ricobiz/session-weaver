@@ -12,7 +12,6 @@ interface DeployRequest {
 }
 
 const RAILWAY_API = 'https://backboard.railway.app/graphql/v2';
-const DEFAULT_GITHUB_REPO = 'https://github.com/ricobiz/session-weaver';
 
 async function railwayQuery(token: string, query: string, variables?: Record<string, any>) {
   const response = await fetch(RAILWAY_API, {
@@ -61,7 +60,6 @@ Deno.serve(async (req) => {
 
     const body: DeployRequest = await req.json().catch(() => ({ action: 'check' }));
     const { action, repoUrl } = body;
-    const githubRepo = repoUrl || DEFAULT_GITHUB_REPO;
 
     // ========================================
     // CHECK - Verify Railway connection
@@ -148,7 +146,18 @@ Deno.serve(async (req) => {
     // DEPLOY - Deploy runner from GitHub repo
     // ========================================
     if (action === 'deploy') {
-      console.log('Starting Railway deployment from GitHub:', githubRepo);
+      if (!repoUrl) {
+        return new Response(
+          JSON.stringify({
+            success: false,
+            error: 'GitHub repository URL is required. Please connect your GitHub and provide your repository URL.',
+            action: 'provide_repo_url',
+          }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+      
+      console.log('Starting Railway deployment from GitHub:', repoUrl);
 
       // Step 0: Get user info and existing projects
       const meData = await railwayQuery(RAILWAY_API_TOKEN, `
@@ -270,7 +279,7 @@ Deno.serve(async (req) => {
             projectId,
             name: 'runner',
             source: {
-              repo: githubRepo,
+              repo: repoUrl,
             }
           }
         });
@@ -347,7 +356,7 @@ Deno.serve(async (req) => {
           projectId,
           serviceId,
           environmentId,
-          githubRepo,
+          repoUrl,
           message: 'Runner deployment started from GitHub repository',
           dashboardUrl: `https://railway.app/project/${projectId}`,
         }),
