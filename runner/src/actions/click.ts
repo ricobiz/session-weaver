@@ -1,4 +1,5 @@
 import { ActionHandler } from '../types';
+import { humanClick, humanMouseMove, randomDelay } from '../stealth/human-behavior';
 
 const VISION_API_TIMEOUT = 15000;
 
@@ -18,8 +19,8 @@ export const clickAction: ActionHandler = async (context, step) => {
     throw new Error('Click action requires a selector or target');
   }
 
-  // Human-like delay before interaction
-  await new Promise(resolve => setTimeout(resolve, 200 + Math.random() * 300));
+  // Human-like delay before interaction (variable timing)
+  await randomDelay(150, 400);
 
   // Phase 1: Try standard selector
   try {
@@ -29,7 +30,16 @@ export const clickAction: ActionHandler = async (context, step) => {
     });
 
     if (element) {
-      await element.click();
+      // Get element bounding box for human-like clicking
+      const box = await element.boundingBox();
+      if (box) {
+        // Click with human-like mouse movement
+        const clickX = box.x + box.width / 2 + (Math.random() - 0.5) * (box.width * 0.3);
+        const clickY = box.y + box.height / 2 + (Math.random() - 0.5) * (box.height * 0.3);
+        await humanClick(page, clickX, clickY);
+      } else {
+        await element.click();
+      }
       await page.waitForLoadState('networkidle', { timeout: 5000 }).catch(() => {});
       log('success', `Clicked: ${selector}`);
       return;
@@ -96,8 +106,8 @@ export const clickAction: ActionHandler = async (context, step) => {
       screenshot_taken: true,
     });
 
-    // Click at detected coordinates
-    await page.mouse.click(result.x, result.y);
+    // Click at detected coordinates with human-like behavior
+    await humanClick(page, result.x, result.y);
     await page.waitForLoadState('networkidle', { timeout: 5000 }).catch(() => {});
     
     log('success', `Clicked via visual detection at (${result.x}, ${result.y})`);

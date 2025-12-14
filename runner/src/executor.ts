@@ -12,6 +12,8 @@ import {
   DEFAULT_RETRY_CONFIG 
 } from './retry';
 import { detectCaptcha, resolveCaptcha } from './captcha';
+import { applyStealthPatches, applyPagePatches } from './stealth';
+import { generateFingerprint, getRandomPreset } from './stealth/fingerprint';
 
 export interface ExecutorConfig {
   headless: boolean;
@@ -326,6 +328,29 @@ export class SessionExecutor {
     
     const launchOptions: any = {
       headless: this.config.headless,
+      args: [
+        // Anti-detection flags
+        '--disable-blink-features=AutomationControlled',
+        '--disable-infobars',
+        '--disable-background-timer-throttling',
+        '--disable-backgrounding-occluded-windows',
+        '--disable-renderer-backgrounding',
+        '--disable-features=TranslateUI',
+        '--disable-ipc-flooding-protection',
+        '--no-first-run',
+        '--no-default-browser-check',
+        // Avoid detection of automation
+        '--disable-dev-shm-usage',
+        '--disable-accelerated-2d-canvas',
+        '--disable-gpu-sandbox',
+        // Stability
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+      ],
+      ignoreDefaultArgs: [
+        '--enable-automation',
+        '--enable-blink-features=IdleDetection',
+      ],
     };
 
     // Apply proxy if configured
@@ -343,37 +368,87 @@ export class SessionExecutor {
   private async createContext(browser: Browser, session: Session): Promise<BrowserContext> {
     const profile = session.profiles;
     const networkConfig = profile.network_config;
+    
+    // Generate fingerprint for anti-detection
+    const fingerprint = generateFingerprint(getRandomPreset());
 
-    const contextOptions: any = {};
+    const contextOptions: any = {
+      // Bypass CSP to allow our stealth scripts
+      bypassCSP: true,
+    };
 
-    // Apply viewport
+    // Apply viewport (from profile or fingerprint)
     if (networkConfig?.viewport) {
       contextOptions.viewport = networkConfig.viewport;
     } else {
-      contextOptions.viewport = { width: 1920, height: 1080 };
+      contextOptions.viewport = { 
+        width: fingerprint.screen.width, 
+        height: fingerprint.screen.height 
+      };
     }
 
-    // Apply user agent
+    // Apply user agent (use realistic one if not specified)
     if (networkConfig?.userAgent) {
       contextOptions.userAgent = networkConfig.userAgent;
+    } else {
+      // Realistic Chrome user agent
+      contextOptions.userAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
     }
 
     // Apply locale
     if (networkConfig?.locale) {
       contextOptions.locale = networkConfig.locale;
+    } else {
+      contextOptions.locale = 'en-US';
     }
 
     // Apply timezone
     if (networkConfig?.timezone) {
       contextOptions.timezoneId = networkConfig.timezone;
+    } else {
+      contextOptions.timezoneId = 'America/New_York';
     }
+
+    // Geolocation consistency with timezone
+    contextOptions.geolocation = this.getGeolocationForTimezone(contextOptions.timezoneId);
+    contextOptions.permissions = ['geolocation'];
+
+    // Apply device scale factor from fingerprint
+    contextOptions.deviceScaleFactor = fingerprint.screen.pixelRatio;
+
+    // Color scheme
+    contextOptions.colorScheme = 'light';
 
     // Apply storage state if available
     if (profile.storage_state && Object.keys(profile.storage_state).length > 0) {
       contextOptions.storageState = profile.storage_state;
     }
 
-    return browser.newContext(contextOptions);
+    const context = await browser.newContext(contextOptions);
+
+    // Apply stealth patches to context
+    await applyStealthPatches(context, fingerprint);
+
+    return context;
+  }
+
+  private getGeolocationForTimezone(timezone: string): { latitude: number; longitude: number } {
+    // Map common timezones to approximate coordinates
+    const tzMap: Record<string, { latitude: number; longitude: number }> = {
+      'America/New_York': { latitude: 40.7128, longitude: -74.0060 },
+      'America/Los_Angeles': { latitude: 34.0522, longitude: -118.2437 },
+      'America/Chicago': { latitude: 41.8781, longitude: -87.6298 },
+      'Europe/London': { latitude: 51.5074, longitude: -0.1278 },
+      'Europe/Paris': { latitude: 48.8566, longitude: 2.3522 },
+      'Europe/Berlin': { latitude: 52.5200, longitude: 13.4050 },
+      'Europe/Moscow': { latitude: 55.7558, longitude: 37.6173 },
+      'Asia/Tokyo': { latitude: 35.6762, longitude: 139.6503 },
+      'Asia/Shanghai': { latitude: 31.2304, longitude: 121.4737 },
+      'Asia/Singapore': { latitude: 1.3521, longitude: 103.8198 },
+      'Australia/Sydney': { latitude: -33.8688, longitude: 151.2093 },
+    };
+
+    return tzMap[timezone] || { latitude: 40.7128, longitude: -74.0060 };
   }
 
   private async executeStep(
