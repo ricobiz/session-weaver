@@ -32,12 +32,14 @@ interface ExpectedChange {
 
 interface AgentResponse {
   action: AgentAction;
+  actions?: AgentAction[];
   reasoning: string;
   confidence: number;
   goal_progress: number;
   goal_achieved: boolean;
   requires_verification: boolean;
   verification_criteria?: ExpectedChange[];
+  generated_data?: Record<string, any>;
 }
 
 interface VerificationState {
