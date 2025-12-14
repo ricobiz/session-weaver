@@ -224,6 +224,34 @@ const Index = () => {
       <Header />
       
       <main className="container mx-auto px-4 py-6">
+        {/* System Setup Banner - Shows when no runners detected */}
+        {runners.length === 0 && (
+          <div className="mb-6 p-4 rounded-lg border-2 border-dashed border-orange-500/50 bg-orange-500/5">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="p-2 rounded-lg bg-orange-500/10">
+                  <Zap className="w-5 h-5 text-orange-500" />
+                </div>
+                <div>
+                  <h3 className="font-medium text-sm">Runner Not Connected</h3>
+                  <p className="text-xs text-muted-foreground">
+                    Deploy or start a runner to execute automation tasks
+                  </p>
+                </div>
+              </div>
+              <Button 
+                variant="outline" 
+                size="sm"
+                onClick={() => setRightPanelView('setup')}
+                className="gap-2"
+              >
+                <Settings className="w-4 h-4" />
+                Open Setup
+              </Button>
+            </div>
+          </div>
+        )}
+
         {/* Stats Grid - Operator focused */}
         <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3 mb-6">
           <StatCard
@@ -260,7 +288,7 @@ const Index = () => {
             title="Runners"
             value={runners.length}
             icon={Cpu}
-            variant="default"
+            variant={runners.length === 0 ? 'error' : 'success'}
           />
         </div>
 
