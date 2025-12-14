@@ -1,0 +1,12 @@
+# Force npm instead of bun for Railway builds
+[phases.setup]
+nixPkgs = ["nodejs_20", "npm"]
+
+[phases.install]
+cmds = ["cd runner && npm install"]
+
+[phases.build]
+cmds = ["cd runner && npm run build"]
+
+[start]
+cmd = "cd runner && npm start"
