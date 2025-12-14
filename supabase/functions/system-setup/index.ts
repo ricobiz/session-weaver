@@ -84,29 +84,22 @@ Deno.serve(async (req) => {
         });
       } else {
         try {
-          const response = await fetch('https://openrouter.ai/api/v1/auth/key', {
+          // Use /api/v1/credits endpoint for pay-as-you-go accounts (same as session-api)
+          const response = await fetch('https://openrouter.ai/api/v1/credits', {
             headers: { 'Authorization': `Bearer ${OPENROUTER_API_KEY}` },
           });
           
           if (response.ok) {
-            const data = await response.json();
-            console.log('OpenRouter response:', JSON.stringify(data));
+            const creditsData = await response.json();
+            console.log('OpenRouter credits response:', JSON.stringify(creditsData));
             
-            // OpenRouter API returns credits/limit info in data.data
-            // Check various possible fields for balance
-            const limitRemaining = data.data?.limit_remaining;
-            const limit = data.data?.limit;
-            const usage = data.data?.usage;
-            
-            // Calculate balance: if limit_remaining exists use it, otherwise calculate from limit - usage
-            let balance = 0;
-            if (typeof limitRemaining === 'number') {
-              balance = limitRemaining;
-            } else if (typeof limit === 'number' && typeof usage === 'number') {
-              balance = limit - usage;
-            } else if (typeof limit === 'number') {
-              balance = limit;
-            }
+            // OpenRouter /credits returns:
+            // - data.total_credits: total credits purchased
+            // - data.total_usage: total credits used
+            const credits = creditsData.data || creditsData;
+            const totalCredits = credits.total_credits ?? 0;
+            const totalUsage = credits.total_usage ?? 0;
+            const balance = totalCredits - totalUsage;
             
             const balanceDisplay = balance.toFixed(2);
             console.log('Calculated balance:', balance, 'Display:', balanceDisplay);
