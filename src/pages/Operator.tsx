@@ -71,7 +71,7 @@ interface RunnerHealth {
 
 interface ChatMessage {
   id: string;
-  type: 'user' | 'system' | 'screenshot' | 'error' | 'success' | 'planning' | 'supervisor';
+  type: 'user' | 'system' | 'screenshot' | 'error' | 'success' | 'planning' | 'supervisor' | 'ai';
   content: string;
   timestamp: Date;
   sessionId?: string;
@@ -80,7 +80,13 @@ interface ChatMessage {
   userCommand?: string;
 }
 
+interface ConversationMessage {
+  role: 'user' | 'assistant';
+  content: string;
+}
+
 const STORAGE_KEY_MODEL = 'operator-selected-model';
+const STORAGE_KEY_CONVERSATION = 'operator-conversation-history';
 
 const Operator = () => {
   const [command, setCommand] = useState('');
@@ -89,6 +95,14 @@ const Operator = () => {
     return localStorage.getItem(STORAGE_KEY_MODEL) || 'google/gemini-2.5-flash';
   });
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
+  const [conversationHistory, setConversationHistory] = useState<ConversationMessage[]>(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY_CONVERSATION);
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
   const [loadingScreenshots, setLoadingScreenshots] = useState<Set<string>>(new Set());
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -96,6 +110,20 @@ const Operator = () => {
   const handleModelChange = (model: string) => {
     setSelectedModel(model);
     localStorage.setItem(STORAGE_KEY_MODEL, model);
+  };
+
+  // Persist conversation history
+  useEffect(() => {
+    if (conversationHistory.length > 0) {
+      localStorage.setItem(STORAGE_KEY_CONVERSATION, JSON.stringify(conversationHistory.slice(-50))); // Keep last 50 messages
+    }
+  }, [conversationHistory]);
+
+  // Clear conversation history
+  const clearConversation = () => {
+    setConversationHistory([]);
+    setChatMessages([]);
+    localStorage.removeItem(STORAGE_KEY_CONVERSATION);
   };
 
   // Auto-scroll to bottom
@@ -222,19 +250,87 @@ const Operator = () => {
     
     const userCommand = command;
     setCommand('');
+    setIsProcessing(true);
     
-    // Add user message
+    // Add user message to chat
     addMessage({ type: 'user', content: userCommand });
     
-    // Add planning message - this will show the TaskPlanner component
-    const planMsgId = Math.random().toString(36).slice(2);
-    setChatMessages(prev => [...prev, {
-      id: planMsgId,
-      type: 'planning',
-      content: userCommand,
-      userCommand,
-      timestamp: new Date(),
-    }]);
+    // Add to conversation history for AI context
+    const newConversation: ConversationMessage[] = [
+      ...conversationHistory,
+      { role: 'user', content: userCommand }
+    ];
+    setConversationHistory(newConversation);
+    
+    try {
+      // Call AI to analyze intent
+      const response = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/operator-chat`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            messages: newConversation,
+            model: selectedModel,
+            context: {
+              activeTasks: activeTasks,
+              activeSessions: activeSessions.slice(0, 10),
+              systemStatus: {
+                online: systemOnline,
+                workers: onlineRunners.length
+              }
+            }
+          })
+        }
+      );
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || `Request failed: ${response.status}`);
+      }
+
+      const aiResponse = await response.json();
+      
+      if (aiResponse.type === 'error') {
+        throw new Error(aiResponse.error);
+      }
+      
+      if (aiResponse.type === 'task_plan') {
+        // AI determined this is a task request - show planner with pre-parsed plan
+        setConversationHistory(prev => [...prev, { 
+          role: 'assistant', 
+          content: `I'll create a task for: ${aiResponse.task.name}. ${aiResponse.reasoning || ''}` 
+        }]);
+        
+        addMessage({ 
+          type: 'ai', 
+          content: aiResponse.reasoning || `Creating task: ${aiResponse.task.name}` 
+        });
+        
+        setChatMessages(prev => [...prev, {
+          id: Math.random().toString(36).slice(2),
+          type: 'planning',
+          content: userCommand,
+          userCommand,
+          timestamp: new Date(),
+        }]);
+      } else {
+        // Conversational response
+        const aiMessage = aiResponse.message || aiResponse.content || JSON.stringify(aiResponse);
+        
+        setConversationHistory(prev => [...prev, { role: 'assistant', content: aiMessage }]);
+        addMessage({ type: 'ai', content: aiMessage });
+      }
+
+    } catch (error) {
+      console.error('AI chat error:', error);
+      addMessage({ 
+        type: 'error', 
+        content: error instanceof Error ? error.message : 'Failed to process message' 
+      });
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
   const handlePlanApproved = async (taskId: string, _plan: any) => {
@@ -666,11 +762,13 @@ const Operator = () => {
                         msg.type === 'error' ? 'bg-destructive/10' :
                         msg.type === 'success' ? 'bg-emerald-500/10' :
                         msg.type === 'screenshot' ? 'bg-primary/10' :
+                        msg.type === 'ai' ? 'bg-primary/10' :
                         'bg-muted/50'
                       }`}>
                         {msg.type === 'error' ? <XCircle className="w-3 h-3 text-destructive" /> :
                          msg.type === 'success' ? <CheckCircle2 className="w-3 h-3 text-emerald-500" /> :
                          msg.type === 'screenshot' ? <Image className="w-3 h-3 text-primary" /> :
+                         msg.type === 'ai' ? <Bot className="w-3 h-3 text-primary" /> :
                          <Sparkles className="w-3 h-3 text-muted-foreground" />}
                       </div>
                     )}
@@ -680,6 +778,7 @@ const Operator = () => {
                         msg.type === 'user' ? 'bg-primary text-primary-foreground rounded-br-md' :
                         msg.type === 'error' ? 'bg-destructive/10 text-destructive border border-destructive/20 rounded-bl-md' :
                         msg.type === 'success' ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 rounded-bl-md' :
+                        msg.type === 'ai' ? 'bg-primary/5 border border-primary/20 rounded-bl-md' :
                         'bg-card border border-border/50 rounded-bl-md'
                       }`}>
                         {msg.content}
@@ -764,15 +863,28 @@ const Operator = () => {
           </div>
           <div className="flex items-center justify-between mt-1.5 px-1">
             <span className="text-[9px] text-muted-foreground/50">⌘+Enter to send</span>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => { refetchTasks(); refetchSessions(); }}
-              className="h-5 text-[9px] text-muted-foreground/50 hover:text-muted-foreground px-1"
-            >
-              <RotateCw className="w-2.5 h-2.5 mr-1" />
-              Refresh
-            </Button>
+            <div className="flex items-center gap-1">
+              {conversationHistory.length > 0 && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={clearConversation}
+                  className="h-5 text-[9px] text-muted-foreground/50 hover:text-destructive px-1"
+                >
+                  <Trash2 className="w-2.5 h-2.5 mr-1" />
+                  Clear
+                </Button>
+              )}
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => { refetchTasks(); refetchSessions(); }}
+                className="h-5 text-[9px] text-muted-foreground/50 hover:text-muted-foreground px-1"
+              >
+                <RotateCw className="w-2.5 h-2.5 mr-1" />
+                Refresh
+              </Button>
+            </div>
           </div>
         </div>
       </div>
