@@ -303,30 +303,31 @@ Deno.serve(async (req) => {
         console.log('Created service from GitHub:', serviceId);
       }
 
-      // Step 4: Set root directory and environment variables
+      // Step 4: Set root directory using service source update
       if (environmentId) {
-        // Set root directory to runner folder
+        // Update source to set root directory to runner folder
         await railwayQuery(RAILWAY_API_TOKEN, `
-          mutation($input: ServiceInstanceUpdateInput!) {
-            serviceInstanceUpdate(input: $input)
+          mutation($id: String!, $source: ServiceSourceInput!) {
+            serviceUpdate(id: $id, input: { source: $source })
           }
         `, {
-          input: {
-            serviceId,
-            environmentId,
-            rootDirectory: 'runner',
-            startCommand: 'npm start',
-            buildCommand: 'npm install',
-            builder: 'NIXPACKS',
-            nixpacksPlan: JSON.stringify({
-              providers: ['node'],
-              phases: {
-                install: {
-                  cmds: ['npm install']
-                }
-              }
+          id: serviceId,
+          source: {
+            repo: repoUrl.replace(/^https?:\/\/github\.com\//, '').replace(/\.git$/, ''),
+            rootDirectory: 'runner'
+          }
+        }).catch(e => console.log('Service source update note:', e.message));
+
+        // Also try the instance update for build settings
+        await railwayQuery(RAILWAY_API_TOKEN, `
+          mutation($serviceId: String!, $environmentId: String!) {
+            serviceInstanceUpdate(serviceId: $serviceId, environmentId: $environmentId, input: {
+              startCommand: "npm start"
             })
           }
+        `, {
+          serviceId,
+          environmentId
         }).catch(e => console.log('Service instance update note:', e.message));
 
         // Set environment variables
