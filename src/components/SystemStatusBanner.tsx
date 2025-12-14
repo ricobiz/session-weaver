@@ -76,15 +76,15 @@ export function SystemStatusBanner() {
   };
 
   return (
-    <div className="flex items-center justify-between px-4 py-2 bg-muted/30 border-b border-border/50 text-sm">
-      <div className="flex items-center gap-6">
+    <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-2 bg-muted/30 border-b border-border/50 text-sm">
+      <div className="flex flex-wrap items-center gap-4 md:gap-6">
         {/* OpenRouter Balance */}
         <div className="flex items-center gap-2">
-          <Wallet className="h-4 w-4 text-primary" />
+          <Wallet className="h-4 w-4 text-primary shrink-0" />
           <span className="text-muted-foreground">Balance:</span>
           <span className={`font-mono font-medium ${
             status.openRouterBalance !== null && status.openRouterBalance < 1 
-              ? 'text-red-500' 
+              ? 'text-destructive' 
               : 'text-foreground'
           }`}>
             {status.openRouterBalance !== null 
@@ -95,14 +95,14 @@ export function SystemStatusBanner() {
 
         {/* Active Tasks */}
         <div className="flex items-center gap-2">
-          <Activity className="h-4 w-4 text-blue-500" />
+          <Activity className="h-4 w-4 text-blue-500 shrink-0" />
           <span className="text-muted-foreground">Tasks:</span>
           <span className="font-medium">{status.activeTasks}</span>
         </div>
 
         {/* Active Sessions */}
         <div className="flex items-center gap-2">
-          <Activity className="h-4 w-4 text-orange-500" />
+          <Activity className="h-4 w-4 text-orange-500 shrink-0" />
           <span className="text-muted-foreground">Sessions:</span>
           <span className="font-medium">{status.activeSessions}</span>
         </div>
@@ -110,7 +110,7 @@ export function SystemStatusBanner() {
 
       {/* Runner Health */}
       <div className="flex items-center gap-2">
-        <Cpu className="h-4 w-4 text-muted-foreground" />
+        <Cpu className="h-4 w-4 text-muted-foreground shrink-0" />
         <span className="text-muted-foreground">Runners:</span>
         {getHealthIcon()}
         <span className={`font-medium ${getHealthColor()}`}>
