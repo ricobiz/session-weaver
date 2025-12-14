@@ -14,6 +14,9 @@ import {
   createTask,
   generateScenarioFromTask,
   startTask,
+  pauseTask,
+  resumeTask,
+  stopTask,
   subscribeToSessions,
   subscribeToLogs,
   subscribeToRunnerHealth,
@@ -198,6 +201,43 @@ export function useStartTask() {
   
   return useMutation({
     mutationFn: startTask,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['tasks'] });
+      queryClient.invalidateQueries({ queryKey: ['sessions'] });
+      queryClient.invalidateQueries({ queryKey: ['stats'] });
+    }
+  });
+}
+
+export function usePauseTask() {
+  const queryClient = useQueryClient();
+  
+  return useMutation({
+    mutationFn: pauseTask,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['tasks'] });
+      queryClient.invalidateQueries({ queryKey: ['sessions'] });
+    }
+  });
+}
+
+export function useResumeTask() {
+  const queryClient = useQueryClient();
+  
+  return useMutation({
+    mutationFn: resumeTask,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['tasks'] });
+      queryClient.invalidateQueries({ queryKey: ['sessions'] });
+    }
+  });
+}
+
+export function useStopTask() {
+  const queryClient = useQueryClient();
+  
+  return useMutation({
+    mutationFn: stopTask,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['tasks'] });
       queryClient.invalidateQueries({ queryKey: ['sessions'] });

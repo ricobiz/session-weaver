@@ -233,6 +233,57 @@ export async function startTask(taskId: string): Promise<{ created: number; sess
   }
 }
 
+// Pause a running task
+export async function pauseTask(taskId: string): Promise<boolean> {
+  try {
+    const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/session-api/tasks/${taskId}/pause`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+      },
+    });
+    return response.ok;
+  } catch (error) {
+    console.error('Error pausing task:', error);
+    return false;
+  }
+}
+
+// Resume a paused task
+export async function resumeTask(taskId: string): Promise<boolean> {
+  try {
+    const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/session-api/tasks/${taskId}/resume`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+      },
+    });
+    return response.ok;
+  } catch (error) {
+    console.error('Error resuming task:', error);
+    return false;
+  }
+}
+
+// Stop a task completely
+export async function stopTask(taskId: string): Promise<boolean> {
+  try {
+    const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/session-api/tasks/${taskId}/stop`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+      },
+    });
+    return response.ok;
+  } catch (error) {
+    console.error('Error stopping task:', error);
+    return false;
+  }
+}
+
 // Create a new profile
 export async function createProfile(profile: Omit<Profile, 'id' | 'created_at' | 'updated_at'>): Promise<Profile | null> {
   const { data, error } = await supabase

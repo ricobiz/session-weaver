@@ -27,7 +27,10 @@ import {
   useRunnerHealth,
   useTasks,
   useCreateTask,
-  useStartTask
+  useStartTask,
+  usePauseTask,
+  useResumeTask,
+  useStopTask
 } from '@/hooks/useSessionData';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -65,8 +68,13 @@ const Index = () => {
   const { data: runners = [] } = useRunnerHealth();
   const { data: tasks = [] } = useTasks();
 
-  const createTask = useCreateTask();
-  const startTask = useStartTask();
+  const createTaskMutation = useCreateTask();
+  const startTaskMutation = useStartTask();
+  const pauseTaskMutation = usePauseTask();
+  const resumeTaskMutation = useResumeTask();
+  const stopTaskMutation = useStopTask();
+  
+  const [loadingTaskId, setLoadingTaskId] = useState<string | null>(null);
 
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
   const [selectedScenario, setSelectedScenario] = useState<Scenario | null>(null);
@@ -104,33 +112,58 @@ const Index = () => {
 
   const handleCreateTask = async (taskConfig: TaskConfig) => {
     try {
-      await createTask.mutateAsync(taskConfig);
-      toast({
-        title: 'Task Created',
-        description: 'Task and scenario generated successfully.',
-      });
+      await createTaskMutation.mutateAsync(taskConfig);
+      toast({ title: 'Task Created', description: 'Task and scenario generated successfully.' });
     } catch (error) {
-      toast({
-        title: 'Error',
-        description: 'Failed to create task.',
-        variant: 'destructive',
-      });
+      toast({ title: 'Error', description: 'Failed to create task.', variant: 'destructive' });
     }
   };
 
   const handleStartTask = async (taskId: string) => {
+    setLoadingTaskId(taskId);
     try {
-      await startTask.mutateAsync(taskId);
-      toast({
-        title: 'Task Started',
-        description: 'Sessions are now queued for execution.',
-      });
+      await startTaskMutation.mutateAsync(taskId);
+      toast({ title: 'Task Started', description: 'Sessions queued for execution.' });
     } catch (error) {
-      toast({
-        title: 'Error',
-        description: 'Failed to start task.',
-        variant: 'destructive',
-      });
+      toast({ title: 'Error', description: 'Failed to start task.', variant: 'destructive' });
+    } finally {
+      setLoadingTaskId(null);
+    }
+  };
+
+  const handlePauseTask = async (taskId: string) => {
+    setLoadingTaskId(taskId);
+    try {
+      await pauseTaskMutation.mutateAsync(taskId);
+      toast({ title: 'Task Paused', description: 'All sessions paused.' });
+    } catch (error) {
+      toast({ title: 'Error', description: 'Failed to pause task.', variant: 'destructive' });
+    } finally {
+      setLoadingTaskId(null);
+    }
+  };
+
+  const handleResumeTask = async (taskId: string) => {
+    setLoadingTaskId(taskId);
+    try {
+      await resumeTaskMutation.mutateAsync(taskId);
+      toast({ title: 'Task Resumed', description: 'Sessions resumed.' });
+    } catch (error) {
+      toast({ title: 'Error', description: 'Failed to resume task.', variant: 'destructive' });
+    } finally {
+      setLoadingTaskId(null);
+    }
+  };
+
+  const handleStopTask = async (taskId: string) => {
+    setLoadingTaskId(taskId);
+    try {
+      await stopTaskMutation.mutateAsync(taskId);
+      toast({ title: 'Task Stopped', description: 'All sessions cancelled.' });
+    } catch (error) {
+      toast({ title: 'Error', description: 'Failed to stop task.', variant: 'destructive' });
+    } finally {
+      setLoadingTaskId(null);
     }
   };
 
@@ -216,6 +249,10 @@ const Index = () => {
                   selectedTaskId={selectedTaskId || undefined}
                   onSelectTask={setSelectedTaskId}
                   onStartTask={handleStartTask}
+                  onPauseTask={handlePauseTask}
+                  onResumeTask={handleResumeTask}
+                  onStopTask={handleStopTask}
+                  loadingTaskId={loadingTaskId || undefined}
                 />
               </TabsContent>
 
@@ -243,7 +280,9 @@ const Index = () => {
                             currentStep: session.current_step || 0,
                             totalSteps: session.total_steps || 0,
                             startTime: session.started_at || session.created_at,
-                            logs: []
+                            logs: [],
+                            error_message: session.error_message,
+                            last_successful_step: session.last_successful_step,
                           }}
                           isSelected={selectedSessionId === session.id}
                           onClick={() => setSelectedSessionId(session.id)}
@@ -293,7 +332,7 @@ const Index = () => {
             <TaskBuilder
               profiles={profiles.map(p => ({ id: p.id, name: p.name }))}
               onCreateTask={handleCreateTask}
-              isCreating={createTask.isPending}
+              isCreating={createTaskMutation.isPending}
             />
           </div>
 
