@@ -6,7 +6,6 @@ import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { toast } from '@/hooks/use-toast';
-import { supabase } from '@/integrations/supabase/client';
 import { 
   Settings, 
   Key, 
@@ -58,15 +57,22 @@ export function AISettingsPanel({ onModelChange, selectedModel: externalSelected
   const loadModels = async () => {
     setIsLoading(true);
     try {
-      const { data, error } = await supabase.functions.invoke('session-api', {
-        method: 'POST',
-        body: { _path: '/ai/models', _method: 'GET' }
+      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/session-api/ai/models`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+        },
       });
 
-      if (error) throw error;
+      if (!response.ok) throw new Error('Failed to fetch models');
       
+      const data = await response.json();
       if (data?.data) {
         setModels(data.data);
+        setApiKeyStatus('valid');
+      } else if (Array.isArray(data)) {
+        setModels(data);
         setApiKeyStatus('valid');
       }
     } catch (error) {
@@ -90,12 +96,15 @@ export function AISettingsPanel({ onModelChange, selectedModel: externalSelected
   const testApiKey = async () => {
     setIsTestingKey(true);
     try {
-      const { data, error } = await supabase.functions.invoke('session-api', {
+      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/session-api/ai/test`, {
         method: 'POST',
-        body: { _path: '/ai/test', _method: 'POST' }
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+        },
       });
-
-      if (error) throw error;
+      
+      const data = await response.json();
       
       if (data?.success) {
         setApiKeyStatus('valid');

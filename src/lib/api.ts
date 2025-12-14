@@ -177,44 +177,60 @@ export async function fetchTasks(): Promise<Task[]> {
 
 // Create a new task
 export async function createTask(task: Omit<Task, 'id' | 'created_at' | 'updated_at' | 'sessions_created' | 'sessions_completed' | 'sessions_failed' | 'status'>): Promise<Task | null> {
-  const { data, error } = await supabase.functions.invoke('session-api', {
-    method: 'POST',
-    body: { ...task, _path: '/tasks', _method: 'POST' }
-  });
+  try {
+    const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/session-api/tasks`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+      },
+      body: JSON.stringify(task),
+    });
 
-  if (error) {
+    if (!response.ok) throw new Error('Failed to create task');
+    return await response.json();
+  } catch (error) {
     console.error('Error creating task:', error);
     return null;
   }
-  return data;
 }
 
 // Generate scenario from task
 export async function generateScenarioFromTask(taskId: string): Promise<Scenario | null> {
-  const { data, error } = await supabase.functions.invoke('session-api', {
-    method: 'POST',
-    body: { _path: `/tasks/${taskId}/generate-scenario`, _method: 'POST' }
-  });
+  try {
+    const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/session-api/tasks/${taskId}/generate-scenario`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+      },
+    });
 
-  if (error) {
+    if (!response.ok) throw new Error('Failed to generate scenario');
+    return await response.json();
+  } catch (error) {
     console.error('Error generating scenario:', error);
     return null;
   }
-  return data;
 }
 
 // Start task execution
 export async function startTask(taskId: string): Promise<{ created: number; sessions: Session[] } | null> {
-  const { data, error } = await supabase.functions.invoke('session-api', {
-    method: 'POST',
-    body: { _path: `/tasks/${taskId}/start`, _method: 'POST' }
-  });
+  try {
+    const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/session-api/tasks/${taskId}/start`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+      },
+    });
 
-  if (error) {
+    if (!response.ok) throw new Error('Failed to start task');
+    return await response.json();
+  } catch (error) {
     console.error('Error starting task:', error);
     return null;
   }
-  return data;
 }
 
 // Create a new profile
@@ -249,19 +265,21 @@ export async function createScenario(scenario: Omit<Scenario, 'id' | 'created_at
 
 // Validate a scenario (dry-run)
 export async function validateScenario(scenarioId: string) {
-  const { data, error } = await supabase.functions.invoke('session-api', {
-    method: 'POST',
-    body: {
-      _path: `/scenarios/${scenarioId}/validate`,
-      _method: 'POST',
-    }
-  });
+  try {
+    const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/session-api/scenarios/${scenarioId}/validate`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+      },
+    });
 
-  if (error) {
+    if (!response.ok) throw new Error('Failed to validate scenario');
+    return await response.json();
+  } catch (error) {
     console.error('Error validating scenario:', error);
     throw error;
   }
-  return data;
 }
 
 // Start session execution
