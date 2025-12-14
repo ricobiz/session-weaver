@@ -1,7 +1,7 @@
 /**
- * Human-like Behavior Simulation
- * Makes automated actions appear more natural with micro-movements,
- * area-based clicking, natural scrolling, and realistic timing
+ * Advanced Human-like Behavior Simulation
+ * Implements randomized speeds, varied trajectories, and natural patterns
+ * to bypass bot detection systems
  */
 
 import { Page } from 'playwright';
@@ -9,57 +9,331 @@ import { Page } from 'playwright';
 export interface HumanBehaviorConfig {
   // Mouse movement
   mouseMovementEnabled: boolean;
-  mouseMovementSpeed: 'slow' | 'normal' | 'fast';
+  speedVariation: 'low' | 'medium' | 'high'; // How much speed varies
+  trajectoryStyle: 'random' | 'bezier' | 'arc' | 'wave' | 'natural';
   microJitterEnabled: boolean;
-  jitterIntensity: number; // 0-1, how much micro-movement
+  jitterIntensity: number; // 0-1
+  overshootEnabled: boolean;
+  overshootIntensity: number; // 0-1
 
   // Clicking
-  clickAreaRadius: number; // pixels - click within this area randomly
-  doubleClickChance: number; // 0-1
+  clickAreaRadius: number;
+  preClickHesitation: boolean;
 
   // Typing
   typingSpeed: 'slow' | 'normal' | 'fast';
   typingMistakes: boolean;
+  typingBursts: boolean; // Type in bursts like humans
 
   // Scrolling
   smoothScrolling: boolean;
-  scrollPauses: boolean;
-  scrollVariance: number; // 0-1
+  scrollVariance: number;
+  inertialScrolling: boolean;
 
   // General
   randomDelays: boolean;
-  minDelayMs: number;
-  maxDelayMs: number;
+  thinkingPauses: boolean;
 }
 
 const DEFAULT_CONFIG: HumanBehaviorConfig = {
   mouseMovementEnabled: true,
-  mouseMovementSpeed: 'normal',
+  speedVariation: 'high',
+  trajectoryStyle: 'natural',
   microJitterEnabled: true,
-  jitterIntensity: 0.3,
-  clickAreaRadius: 5, // 5px radius = 10px diameter click area
-  doubleClickChance: 0,
+  jitterIntensity: 0.4,
+  overshootEnabled: true,
+  overshootIntensity: 0.15,
+  clickAreaRadius: 6,
+  preClickHesitation: true,
   typingSpeed: 'normal',
   typingMistakes: false,
+  typingBursts: true,
   smoothScrolling: true,
-  scrollPauses: true,
-  scrollVariance: 0.3,
+  scrollVariance: 0.35,
+  inertialScrolling: true,
   randomDelays: true,
-  minDelayMs: 50,
-  maxDelayMs: 200,
+  thinkingPauses: true,
 };
 
 // Track current mouse position
-let currentMouseX = 500;
-let currentMouseY = 400;
+let currentMouseX = 960;
+let currentMouseY = 540;
+
+// ==================== TRAJECTORY GENERATORS ====================
+
+type TrajectoryType = 'bezier' | 'arc' | 'wave' | 'sigmoid' | 'erratic' | 'direct';
 
 /**
- * Get random point within a circular area (for natural click variation)
+ * Select random trajectory type based on distance and context
+ */
+function selectTrajectoryType(distance: number): TrajectoryType {
+  const rand = Math.random();
+  
+  if (distance < 100) {
+    // Short distances: more direct or slight curves
+    if (rand < 0.4) return 'direct';
+    if (rand < 0.7) return 'bezier';
+    return 'arc';
+  } else if (distance < 400) {
+    // Medium distances: variety of curves
+    if (rand < 0.25) return 'bezier';
+    if (rand < 0.5) return 'arc';
+    if (rand < 0.7) return 'wave';
+    if (rand < 0.85) return 'sigmoid';
+    return 'erratic';
+  } else {
+    // Long distances: more complex paths
+    if (rand < 0.3) return 'bezier';
+    if (rand < 0.5) return 'sigmoid';
+    if (rand < 0.7) return 'wave';
+    if (rand < 0.85) return 'erratic';
+    return 'arc';
+  }
+}
+
+/**
+ * Generate random speed multiplier for this movement
+ */
+function getRandomSpeedMultiplier(variation: 'low' | 'medium' | 'high'): number {
+  const ranges = {
+    low: { min: 0.85, max: 1.15 },
+    medium: { min: 0.6, max: 1.5 },
+    high: { min: 0.3, max: 2.2 },
+  };
+  const range = ranges[variation];
+  return range.min + Math.random() * (range.max - range.min);
+}
+
+/**
+ * Get number of points based on distance and speed
+ */
+function getPointCount(distance: number, speedMultiplier: number): number {
+  const basePoints = Math.max(10, Math.min(80, Math.floor(distance / 8)));
+  return Math.floor(basePoints / speedMultiplier);
+}
+
+/**
+ * Generate Bezier curve path (classic smooth movement)
+ */
+function generateBezierPath(
+  startX: number, startY: number,
+  endX: number, endY: number,
+  numPoints: number
+): Array<{ x: number; y: number }> {
+  const points: Array<{ x: number; y: number }> = [];
+  
+  // Random control points with varied curvature
+  const curvature = (Math.random() - 0.5) * 200 * (Math.random() + 0.5);
+  const asymmetry = Math.random() * 0.4 + 0.3; // 0.3-0.7
+  
+  const cp1x = startX + (endX - startX) * asymmetry + curvature * (Math.random() - 0.3);
+  const cp1y = startY + (endY - startY) * 0.2 + curvature;
+  const cp2x = startX + (endX - startX) * (1 - asymmetry) + curvature * (Math.random() - 0.5);
+  const cp2y = startY + (endY - startY) * 0.8 - curvature * 0.5;
+  
+  for (let i = 0; i <= numPoints; i++) {
+    const t = i / numPoints;
+    const oneMinusT = 1 - t;
+    
+    const x = Math.pow(oneMinusT, 3) * startX +
+              3 * Math.pow(oneMinusT, 2) * t * cp1x +
+              3 * oneMinusT * Math.pow(t, 2) * cp2x +
+              Math.pow(t, 3) * endX;
+    
+    const y = Math.pow(oneMinusT, 3) * startY +
+              3 * Math.pow(oneMinusT, 2) * t * cp1y +
+              3 * oneMinusT * Math.pow(t, 2) * cp2y +
+              Math.pow(t, 3) * endY;
+    
+    points.push({ x, y });
+  }
+  
+  return points;
+}
+
+/**
+ * Generate arc/semicircle path
+ */
+function generateArcPath(
+  startX: number, startY: number,
+  endX: number, endY: number,
+  numPoints: number
+): Array<{ x: number; y: number }> {
+  const points: Array<{ x: number; y: number }> = [];
+  
+  const midX = (startX + endX) / 2;
+  const midY = (startY + endY) / 2;
+  const distance = Math.sqrt(Math.pow(endX - startX, 2) + Math.pow(endY - startY, 2));
+  
+  // Random arc height (positive or negative)
+  const arcHeight = (Math.random() - 0.5) * distance * 0.6;
+  
+  // Perpendicular direction
+  const dx = endX - startX;
+  const dy = endY - startY;
+  const perpX = -dy / distance;
+  const perpY = dx / distance;
+  
+  for (let i = 0; i <= numPoints; i++) {
+    const t = i / numPoints;
+    
+    // Arc factor (peaks at t=0.5)
+    const arcFactor = Math.sin(t * Math.PI);
+    
+    const x = startX + (endX - startX) * t + perpX * arcHeight * arcFactor;
+    const y = startY + (endY - startY) * t + perpY * arcHeight * arcFactor;
+    
+    points.push({ x, y });
+  }
+  
+  return points;
+}
+
+/**
+ * Generate wave/sine path
+ */
+function generateWavePath(
+  startX: number, startY: number,
+  endX: number, endY: number,
+  numPoints: number
+): Array<{ x: number; y: number }> {
+  const points: Array<{ x: number; y: number }> = [];
+  
+  const distance = Math.sqrt(Math.pow(endX - startX, 2) + Math.pow(endY - startY, 2));
+  const waveFrequency = 1 + Math.random() * 2; // 1-3 waves
+  const waveAmplitude = distance * (0.05 + Math.random() * 0.1);
+  
+  const dx = endX - startX;
+  const dy = endY - startY;
+  const perpX = -dy / distance;
+  const perpY = dx / distance;
+  
+  for (let i = 0; i <= numPoints; i++) {
+    const t = i / numPoints;
+    
+    // Damped sine wave (smaller at start and end)
+    const envelope = Math.sin(t * Math.PI);
+    const wave = Math.sin(t * Math.PI * 2 * waveFrequency) * envelope;
+    
+    const x = startX + dx * t + perpX * waveAmplitude * wave;
+    const y = startY + dy * t + perpY * waveAmplitude * wave;
+    
+    points.push({ x, y });
+  }
+  
+  return points;
+}
+
+/**
+ * Generate sigmoid/S-curve path
+ */
+function generateSigmoidPath(
+  startX: number, startY: number,
+  endX: number, endY: number,
+  numPoints: number
+): Array<{ x: number; y: number }> {
+  const points: Array<{ x: number; y: number }> = [];
+  
+  // Sigmoid steepness (higher = sharper S)
+  const steepness = 4 + Math.random() * 4; // 4-8
+  
+  for (let i = 0; i <= numPoints; i++) {
+    const t = i / numPoints;
+    
+    // Sigmoid function for smooth S-curve
+    const sigmoid = 1 / (1 + Math.exp(-steepness * (t - 0.5)));
+    
+    const x = startX + (endX - startX) * sigmoid;
+    const y = startY + (endY - startY) * t; // Linear Y, sigmoid X creates S
+    
+    points.push({ x, y });
+  }
+  
+  return points;
+}
+
+/**
+ * Generate erratic/nervous path (for hesitant movements)
+ */
+function generateErraticPath(
+  startX: number, startY: number,
+  endX: number, endY: number,
+  numPoints: number
+): Array<{ x: number; y: number }> {
+  const points: Array<{ x: number; y: number }> = [];
+  
+  const distance = Math.sqrt(Math.pow(endX - startX, 2) + Math.pow(endY - startY, 2));
+  const erraticness = distance * 0.08;
+  
+  for (let i = 0; i <= numPoints; i++) {
+    const t = i / numPoints;
+    
+    // More erratic in the middle, smoother at ends
+    const erraticFactor = Math.sin(t * Math.PI) * (0.5 + Math.random() * 0.5);
+    
+    const x = startX + (endX - startX) * t + (Math.random() - 0.5) * erraticness * erraticFactor;
+    const y = startY + (endY - startY) * t + (Math.random() - 0.5) * erraticness * erraticFactor;
+    
+    points.push({ x, y });
+  }
+  
+  return points;
+}
+
+/**
+ * Generate direct path with slight deviation
+ */
+function generateDirectPath(
+  startX: number, startY: number,
+  endX: number, endY: number,
+  numPoints: number
+): Array<{ x: number; y: number }> {
+  const points: Array<{ x: number; y: number }> = [];
+  
+  // Slight curve deviation
+  const deviation = (Math.random() - 0.5) * 20;
+  
+  for (let i = 0; i <= numPoints; i++) {
+    const t = i / numPoints;
+    const curve = Math.sin(t * Math.PI) * deviation;
+    
+    const x = startX + (endX - startX) * t + curve * 0.3;
+    const y = startY + (endY - startY) * t + curve * 0.7;
+    
+    points.push({ x, y });
+  }
+  
+  return points;
+}
+
+/**
+ * Generate path based on trajectory type
+ */
+function generatePath(
+  startX: number, startY: number,
+  endX: number, endY: number,
+  trajectoryType: TrajectoryType,
+  numPoints: number
+): Array<{ x: number; y: number }> {
+  switch (trajectoryType) {
+    case 'bezier': return generateBezierPath(startX, startY, endX, endY, numPoints);
+    case 'arc': return generateArcPath(startX, startY, endX, endY, numPoints);
+    case 'wave': return generateWavePath(startX, startY, endX, endY, numPoints);
+    case 'sigmoid': return generateSigmoidPath(startX, startY, endX, endY, numPoints);
+    case 'erratic': return generateErraticPath(startX, startY, endX, endY, numPoints);
+    case 'direct': return generateDirectPath(startX, startY, endX, endY, numPoints);
+    default: return generateBezierPath(startX, startY, endX, endY, numPoints);
+  }
+}
+
+// ==================== HELPER FUNCTIONS ====================
+
+/**
+ * Get random point within circular area
  */
 function getRandomPointInArea(centerX: number, centerY: number, radius: number): { x: number; y: number } {
-  // Use polar coordinates for uniform distribution in circle
   const angle = Math.random() * 2 * Math.PI;
-  const r = Math.sqrt(Math.random()) * radius; // sqrt for uniform distribution
+  const r = Math.sqrt(Math.random()) * radius;
   return {
     x: centerX + r * Math.cos(angle),
     y: centerY + r * Math.sin(angle),
@@ -67,18 +341,48 @@ function getRandomPointInArea(centerX: number, centerY: number, radius: number):
 }
 
 /**
- * Generate micro-jitter offset (simulates hand tremor)
+ * Generate micro-jitter (hand tremor simulation)
  */
 function getMicroJitter(intensity: number): { dx: number; dy: number } {
-  const maxJitter = 2 * intensity; // Max 2px at full intensity
+  // Use Gaussian-like distribution for more natural jitter
+  const gaussian = () => (Math.random() + Math.random() + Math.random()) / 3 - 0.5;
+  const maxJitter = 3 * intensity;
   return {
-    dx: (Math.random() - 0.5) * 2 * maxJitter,
-    dy: (Math.random() - 0.5) * 2 * maxJitter,
+    dx: gaussian() * maxJitter,
+    dy: gaussian() * maxJitter,
   };
 }
 
 /**
- * Human-like mouse movement using Bezier curves with micro-jitter
+ * Apply easing function for natural acceleration/deceleration
+ */
+function applyEasing(t: number, type: 'easeInOut' | 'easeOut' | 'easeIn' | 'linear'): number {
+  switch (type) {
+    case 'easeInOut':
+      return t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
+    case 'easeOut':
+      return 1 - Math.pow(1 - t, 3);
+    case 'easeIn':
+      return t * t * t;
+    case 'linear':
+    default:
+      return t;
+  }
+}
+
+/**
+ * Random delay with Gaussian-like distribution
+ */
+export async function randomDelay(minMs: number, maxMs: number): Promise<void> {
+  const gaussian = (Math.random() + Math.random() + Math.random()) / 3;
+  const delay = minMs + gaussian * (maxMs - minMs);
+  await new Promise(resolve => setTimeout(resolve, Math.max(1, delay)));
+}
+
+// ==================== MAIN FUNCTIONS ====================
+
+/**
+ * Human-like mouse movement with random trajectories and speeds
  */
 export async function humanMouseMove(
   page: Page,
@@ -97,16 +401,49 @@ export async function humanMouseMove(
 
   const startX = currentMouseX;
   const startY = currentMouseY;
+  const distance = Math.sqrt(Math.pow(targetX - startX, 2) + Math.pow(targetY - startY, 2));
 
-  // Generate bezier curve points for natural movement
-  const points = generateBezierPath(startX, startY, targetX, targetY, cfg.mouseMovementSpeed);
+  if (distance < 5) {
+    await page.mouse.move(targetX, targetY);
+    currentMouseX = targetX;
+    currentMouseY = targetY;
+    return;
+  }
 
-  // Move through points with optional micro-jitter
+  // Random speed for this movement
+  const speedMultiplier = getRandomSpeedMultiplier(cfg.speedVariation);
+  const numPoints = getPointCount(distance, speedMultiplier);
+
+  // Random trajectory type
+  const trajectoryType = cfg.trajectoryStyle === 'natural' 
+    ? selectTrajectoryType(distance)
+    : cfg.trajectoryStyle as TrajectoryType;
+
+  // Calculate overshoot target
+  let finalX = targetX;
+  let finalY = targetY;
+  if (cfg.overshootEnabled && Math.random() < 0.3) {
+    const overshootAmount = distance * cfg.overshootIntensity * (0.5 + Math.random());
+    const angle = Math.atan2(targetY - startY, targetX - startX);
+    finalX = targetX + Math.cos(angle) * overshootAmount;
+    finalY = targetY + Math.sin(angle) * overshootAmount;
+  }
+
+  // Generate path
+  const points = generatePath(startX, startY, finalX, finalY, trajectoryType, numPoints);
+
+  // Random easing type
+  const easings: Array<'easeInOut' | 'easeOut' | 'easeIn' | 'linear'> = ['easeInOut', 'easeOut', 'easeIn'];
+  const easing = easings[Math.floor(Math.random() * easings.length)];
+
+  // Move through points with variable speed
   for (let i = 0; i < points.length; i++) {
     let { x, y } = points[i];
+    const t = i / points.length;
+    const easedT = applyEasing(t, easing);
 
-    // Add micro-jitter (not on final point)
-    if (cfg.microJitterEnabled && i < points.length - 1) {
+    // Add micro-jitter (except near end)
+    if (cfg.microJitterEnabled && i < points.length - 3) {
       const jitter = getMicroJitter(cfg.jitterIntensity);
       x += jitter.dx;
       y += jitter.dy;
@@ -116,19 +453,32 @@ export async function humanMouseMove(
     currentMouseX = x;
     currentMouseY = y;
 
+    // Variable delay between points (slower at start/end, faster in middle)
     if (cfg.randomDelays) {
-      await randomDelay(3, 12);
+      const speedFactor = 1 - Math.sin(t * Math.PI) * 0.5; // Faster in middle
+      const baseDelay = 3 + Math.random() * 8;
+      await new Promise(resolve => setTimeout(resolve, baseDelay * speedFactor / speedMultiplier));
     }
   }
 
-  // Final move to exact target (no jitter)
+  // Correction movement if we overshot
+  if (finalX !== targetX || finalY !== targetY) {
+    await randomDelay(30, 80);
+    const correctionPoints = generateDirectPath(currentMouseX, currentMouseY, targetX, targetY, 5);
+    for (const point of correctionPoints) {
+      await page.mouse.move(point.x, point.y);
+      await new Promise(resolve => setTimeout(resolve, 5));
+    }
+  }
+
+  // Final position
   await page.mouse.move(targetX, targetY);
   currentMouseX = targetX;
   currentMouseY = targetY;
 }
 
 /**
- * Human-like clicking within an area (not exact point)
+ * Human-like clicking with hesitation and area randomization
  */
 export async function humanClick(
   page: Page,
@@ -138,31 +488,29 @@ export async function humanClick(
 ): Promise<void> {
   const cfg = { ...DEFAULT_CONFIG, ...config };
 
-  // Get random point within click area
+  // Random point within click area
   const clickPoint = getRandomPointInArea(x, y, cfg.clickAreaRadius);
 
-  // Move to target first with natural path
+  // Move to target
   await humanMouseMove(page, clickPoint.x, clickPoint.y, config);
 
-  // Small pause before click (humans don't click instantly)
-  if (cfg.randomDelays) {
-    await randomDelay(30, 120);
-  }
-
-  // Occasional slight movement before click (hesitation)
-  if (Math.random() < 0.15) {
-    const hesitation = getMicroJitter(1);
-    await page.mouse.move(clickPoint.x + hesitation.dx, clickPoint.y + hesitation.dy);
-    await randomDelay(20, 60);
+  // Pre-click hesitation (sometimes users pause before clicking)
+  if (cfg.preClickHesitation && Math.random() < 0.25) {
+    await randomDelay(80, 250);
+    // Small adjustment movement
+    const adjustment = getMicroJitter(1.5);
+    await page.mouse.move(clickPoint.x + adjustment.dx, clickPoint.y + adjustment.dy);
+    await randomDelay(30, 80);
     await page.mouse.move(clickPoint.x, clickPoint.y);
   }
 
+  // Small pause before click
+  await randomDelay(20, 100);
+
   await page.mouse.click(clickPoint.x, clickPoint.y);
 
-  // Small pause after click
-  if (cfg.randomDelays) {
-    await randomDelay(80, 250);
-  }
+  // Post-click pause
+  await randomDelay(80, 200);
 }
 
 /**
@@ -178,57 +526,46 @@ export async function humanDoubleClick(
   const clickPoint = getRandomPointInArea(x, y, cfg.clickAreaRadius);
 
   await humanMouseMove(page, clickPoint.x, clickPoint.y, config);
-
-  if (cfg.randomDelays) {
-    await randomDelay(30, 80);
-  }
-
+  await randomDelay(20, 80);
   await page.mouse.dblclick(clickPoint.x, clickPoint.y);
-
-  if (cfg.randomDelays) {
-    await randomDelay(100, 300);
-  }
+  await randomDelay(100, 250);
 }
 
 /**
- * Human-like drag and drop within areas
+ * Human-like drag and drop
  */
 export async function humanDrag(
   page: Page,
-  fromX: number,
-  fromY: number,
-  toX: number,
-  toY: number,
+  fromX: number, fromY: number,
+  toX: number, toY: number,
   config: Partial<HumanBehaviorConfig> = {}
 ): Promise<void> {
   const cfg = { ...DEFAULT_CONFIG, ...config };
 
-  // Get random points within areas
   const startPoint = getRandomPointInArea(fromX, fromY, cfg.clickAreaRadius);
   const endPoint = getRandomPointInArea(toX, toY, cfg.clickAreaRadius);
 
-  // Move to start position
+  // Move to start
   await humanMouseMove(page, startPoint.x, startPoint.y, config);
-
-  // Pause before starting drag
-  await randomDelay(50, 150);
+  await randomDelay(40, 120);
 
   // Mouse down
   await page.mouse.down();
-
-  // Small pause after grabbing
   await randomDelay(30, 80);
 
-  // Generate drag path (slower than regular movement)
-  const dragConfig = { ...config, mouseMovementSpeed: 'slow' as const };
-  const points = generateBezierPath(startPoint.x, startPoint.y, endPoint.x, endPoint.y, 'slow');
+  // Drag path (use slower, more deliberate movement)
+  const distance = Math.sqrt(Math.pow(endPoint.x - startPoint.x, 2) + Math.pow(endPoint.y - startPoint.y, 2));
+  const numPoints = Math.max(15, Math.floor(distance / 5));
+  const trajectoryType = Math.random() < 0.5 ? 'bezier' : 'arc';
+  
+  const points = generatePath(startPoint.x, startPoint.y, endPoint.x, endPoint.y, trajectoryType, numPoints);
 
-  // Move through drag path with micro-jitter
   for (let i = 0; i < points.length; i++) {
     let { x, y } = points[i];
 
-    if (cfg.microJitterEnabled) {
-      const jitter = getMicroJitter(cfg.jitterIntensity * 0.5); // Less jitter when dragging
+    // Less jitter when dragging
+    if (cfg.microJitterEnabled && i % 3 === 0) {
+      const jitter = getMicroJitter(cfg.jitterIntensity * 0.3);
       x += jitter.dx;
       y += jitter.dy;
     }
@@ -236,25 +573,19 @@ export async function humanDrag(
     await page.mouse.move(x, y);
     currentMouseX = x;
     currentMouseY = y;
-
-    await randomDelay(8, 20);
+    await new Promise(resolve => setTimeout(resolve, 8 + Math.random() * 12));
   }
 
-  // Final position
   await page.mouse.move(endPoint.x, endPoint.y);
-
-  // Pause before release
-  await randomDelay(30, 100);
+  await randomDelay(30, 80);
 
   // Mouse up
   await page.mouse.up();
-
-  // Pause after drop
-  await randomDelay(80, 200);
+  await randomDelay(80, 180);
 }
 
 /**
- * Human-like typing with realistic speed and pauses
+ * Human-like typing with bursts and variable rhythm
  */
 export async function humanType(
   page: Page,
@@ -262,43 +593,62 @@ export async function humanType(
   config: Partial<HumanBehaviorConfig> = {}
 ): Promise<void> {
   const cfg = { ...DEFAULT_CONFIG, ...config };
-  const baseDelay = getTypingDelay(cfg.typingSpeed);
+
+  const baseDelay = cfg.typingSpeed === 'slow' ? 180 : cfg.typingSpeed === 'fast' ? 60 : 100;
+
+  // Simulate typing in bursts (3-7 characters, then pause)
+  let burstCounter = 0;
+  const burstLength = 3 + Math.floor(Math.random() * 5);
 
   for (let i = 0; i < text.length; i++) {
     const char = text[i];
 
-    // Simulate typing mistake (rare)
-    if (cfg.typingMistakes && Math.random() < 0.02) {
+    // Typing mistakes (rare)
+    if (cfg.typingMistakes && Math.random() < 0.015) {
       const wrongChar = getAdjacentKey(char);
       if (wrongChar) {
-        await page.keyboard.press(wrongChar);
+        await page.keyboard.type(wrongChar, { delay: 0 });
         await randomDelay(100, 200);
         await page.keyboard.press('Backspace');
-        await randomDelay(50, 100);
+        await randomDelay(40, 80);
       }
     }
 
-    // Type the character
+    // Type character
     await page.keyboard.type(char, { delay: 0 });
 
-    // Variable delay between keystrokes (Gaussian-like distribution)
-    const variance = (Math.random() + Math.random() + Math.random()) / 3 - 0.5;
-    const delay = baseDelay + variance * baseDelay * 0.8;
-    await new Promise(resolve => setTimeout(resolve, Math.max(20, delay)));
+    // Variable delay with Gaussian distribution
+    const gaussian = (Math.random() + Math.random() + Math.random()) / 3;
+    const variance = (gaussian - 0.5) * baseDelay * 0.7;
+    const delay = Math.max(20, baseDelay + variance);
+    
+    await new Promise(resolve => setTimeout(resolve, delay));
 
-    // Occasional longer pauses (thinking, looking at keyboard)
-    if (Math.random() < 0.03) {
-      await randomDelay(300, 800);
+    // Burst pause
+    if (cfg.typingBursts) {
+      burstCounter++;
+      if (burstCounter >= burstLength) {
+        await randomDelay(200, 600);
+        burstCounter = 0;
+      }
     }
-    // Shorter pause after space (natural rhythm)
-    else if (char === ' ' && Math.random() < 0.2) {
-      await randomDelay(100, 250);
+
+    // Natural pause after space or punctuation
+    if (char === ' ' && Math.random() < 0.15) {
+      await randomDelay(80, 200);
+    } else if ('.!?,;:'.includes(char) && Math.random() < 0.3) {
+      await randomDelay(150, 400);
+    }
+
+    // Thinking pause (rare)
+    if (cfg.thinkingPauses && Math.random() < 0.02) {
+      await randomDelay(400, 1000);
     }
   }
 }
 
 /**
- * Human-like scrolling with natural acceleration/deceleration
+ * Human-like scrolling with inertia
  */
 export async function humanScroll(
   page: Page,
@@ -317,47 +667,48 @@ export async function humanScroll(
   // Add variance to total distance
   const actualDistance = distance * (1 + (Math.random() - 0.5) * cfg.scrollVariance);
 
-  // Break scroll into variable steps (simulate inertial scrolling)
-  const numSteps = Math.ceil(actualDistance / 80) + Math.floor(Math.random() * 5);
-  const steps: number[] = [];
+  if (cfg.inertialScrolling) {
+    // Simulate inertial scrolling (fast start, gradual slow down)
+    const numSteps = 8 + Math.floor(Math.random() * 6);
+    let remaining = actualDistance;
 
-  // Generate step sizes with ease-in-out pattern
-  for (let i = 0; i < numSteps; i++) {
-    const progress = i / numSteps;
-    // Ease-in-out curve: faster in middle, slower at start/end
-    const easeMultiplier = Math.sin(progress * Math.PI);
-    const baseStep = actualDistance / numSteps;
-    steps.push(baseStep * (0.5 + easeMultiplier * 0.8));
-  }
+    for (let i = 0; i < numSteps; i++) {
+      // Exponential decay for inertia
+      const fraction = (numSteps - i) / numSteps;
+      const stepDistance = remaining * (0.2 + fraction * 0.3);
+      remaining -= stepDistance;
 
-  // Normalize steps to match actual distance
-  const totalSteps = steps.reduce((a, b) => a + b, 0);
-  const normalizer = actualDistance / totalSteps;
+      const delta = direction === 'down' ? stepDistance : -stepDistance;
+      const randomizedDelta = delta * (0.85 + Math.random() * 0.3);
 
-  for (let i = 0; i < steps.length; i++) {
-    const stepDistance = steps[i] * normalizer;
-    const delta = direction === 'down' ? stepDistance : -stepDistance;
+      await page.mouse.wheel(0, randomizedDelta);
+      
+      // Delays increase as scroll slows
+      const delay = 15 + (1 - fraction) * 40 + Math.random() * 20;
+      await new Promise(resolve => setTimeout(resolve, delay));
+    }
+  } else {
+    // Standard smooth scroll
+    const numSteps = Math.ceil(actualDistance / 60);
+    const stepDistance = actualDistance / numSteps;
 
-    // Add slight randomness to each scroll step
-    const randomDelta = delta * (0.9 + Math.random() * 0.2);
-    await page.mouse.wheel(0, randomDelta);
-
-    // Variable pause between scroll steps (faster in middle)
-    if (i < steps.length - 1) {
-      const progress = i / steps.length;
-      const pauseMultiplier = 1 - Math.sin(progress * Math.PI) * 0.6;
-      await randomDelay(15 * pauseMultiplier, 50 * pauseMultiplier);
+    for (let i = 0; i < numSteps; i++) {
+      const delta = direction === 'down' ? stepDistance : -stepDistance;
+      const randomizedDelta = delta * (0.8 + Math.random() * 0.4);
+      
+      await page.mouse.wheel(0, randomizedDelta);
+      await randomDelay(20, 60);
     }
   }
 
-  // Occasional pause after scrolling (reading content)
-  if (cfg.scrollPauses && Math.random() < 0.25) {
-    await randomDelay(400, 1200);
+  // Reading pause after scroll
+  if (Math.random() < 0.25) {
+    await randomDelay(500, 1500);
   }
 }
 
 /**
- * Keyboard navigation (arrow keys, page up/down, home/end)
+ * Keyboard navigation
  */
 export async function humanKeyboardNav(
   page: Page,
@@ -366,38 +717,19 @@ export async function humanKeyboardNav(
 ): Promise<void> {
   const cfg = { ...DEFAULT_CONFIG, ...config };
 
-  // Small pause before key press
   if (cfg.randomDelays) {
-    await randomDelay(30, 100);
+    await randomDelay(25, 80);
   }
 
   await page.keyboard.press(key);
 
-  // Pause after navigation
   if (cfg.randomDelays) {
-    await randomDelay(50, 200);
+    await randomDelay(40, 150);
   }
 }
 
 /**
- * Random delay between actions
- */
-export async function randomDelay(minMs: number, maxMs: number): Promise<void> {
-  const delay = Math.floor(Math.random() * (maxMs - minMs + 1)) + minMs;
-  await new Promise(resolve => setTimeout(resolve, delay));
-}
-
-/**
- * Human-like wait that simulates reading or thinking
- */
-export async function humanWait(durationMs: number): Promise<void> {
-  const variance = durationMs * 0.2;
-  const actualDuration = durationMs + (Math.random() - 0.5) * 2 * variance;
-  await new Promise(resolve => setTimeout(resolve, Math.max(0, actualDuration)));
-}
-
-/**
- * Idle mouse micro-movements (when waiting)
+ * Idle mouse micro-movements (when waiting/reading)
  */
 export async function idleMouseMovement(
   page: Page,
@@ -406,85 +738,37 @@ export async function idleMouseMovement(
 ): Promise<void> {
   const cfg = { ...DEFAULT_CONFIG, ...config };
   const startTime = Date.now();
+  const centerX = currentMouseX;
+  const centerY = currentMouseY;
 
   while (Date.now() - startTime < durationMs) {
-    // Small random movement
-    const jitter = getMicroJitter(cfg.jitterIntensity * 2);
-    const newX = currentMouseX + jitter.dx * 3;
-    const newY = currentMouseY + jitter.dy * 3;
+    // Small random drift
+    const drift = getMicroJitter(cfg.jitterIntensity * 4);
+    const newX = Math.max(0, Math.min(1920, centerX + drift.dx * 5));
+    const newY = Math.max(0, Math.min(1080, centerY + drift.dy * 5));
 
     await page.mouse.move(newX, newY);
     currentMouseX = newX;
     currentMouseY = newY;
 
-    // Wait before next micro-movement
-    await randomDelay(200, 800);
-  }
-}
-
-// --- Helper Functions ---
-
-function generateBezierPath(
-  startX: number,
-  startY: number,
-  endX: number,
-  endY: number,
-  speed: 'slow' | 'normal' | 'fast'
-): Array<{ x: number; y: number }> {
-  const points: Array<{ x: number; y: number }> = [];
-  const distance = Math.sqrt(Math.pow(endX - startX, 2) + Math.pow(endY - startY, 2));
-
-  // More points for longer distances
-  const basePoints = speed === 'slow' ? 35 : speed === 'fast' ? 12 : 22;
-  const numPoints = Math.max(8, Math.min(50, Math.floor(basePoints * (distance / 500))));
-
-  // Control points with natural curve variation
-  const midX = (startX + endX) / 2;
-  const midY = (startY + endY) / 2;
-
-  // Add slight overshoot tendency (humans often overshoot slightly)
-  const overshoot = 0.05 + Math.random() * 0.1;
-
-  // Control points create a natural S-curve or arc
-  const curvature = (Math.random() - 0.5) * 150;
-  const cp1x = startX + (endX - startX) * 0.25 + curvature * (Math.random() - 0.5);
-  const cp1y = startY + (endY - startY) * 0.1 + curvature;
-  const cp2x = startX + (endX - startX) * 0.75 + curvature * (Math.random() - 0.5);
-  const cp2y = startY + (endY - startY) * 0.9 - curvature * 0.5;
-
-  for (let i = 0; i <= numPoints; i++) {
-    const t = i / numPoints;
-
-    // Add slight ease-in-out for more natural acceleration
-    const easedT = t < 0.5
-      ? 2 * t * t
-      : 1 - Math.pow(-2 * t + 2, 2) / 2;
-
-    const x = cubicBezier(startX, cp1x, cp2x, endX + (endX - startX) * overshoot, easedT);
-    const y = cubicBezier(startY, cp1y, cp2y, endY + (endY - startY) * overshoot, easedT);
-    points.push({ x, y });
+    // Variable wait between micro-movements
+    await randomDelay(150, 600);
   }
 
-  return points;
+  // Return near original position
+  await page.mouse.move(centerX + (Math.random() - 0.5) * 10, centerY + (Math.random() - 0.5) * 10);
 }
 
-function cubicBezier(p0: number, p1: number, p2: number, p3: number, t: number): number {
-  const oneMinusT = 1 - t;
-  return (
-    Math.pow(oneMinusT, 3) * p0 +
-    3 * Math.pow(oneMinusT, 2) * t * p1 +
-    3 * oneMinusT * Math.pow(t, 2) * p2 +
-    Math.pow(t, 3) * p3
-  );
+/**
+ * Human-like wait with micro-activity
+ */
+export async function humanWait(durationMs: number): Promise<void> {
+  const variance = durationMs * 0.2;
+  const actualDuration = durationMs + (Math.random() - 0.5) * 2 * variance;
+  await new Promise(resolve => setTimeout(resolve, Math.max(0, actualDuration)));
 }
 
-function getTypingDelay(speed: 'slow' | 'normal' | 'fast'): number {
-  switch (speed) {
-    case 'slow': return 180;
-    case 'fast': return 60;
-    default: return 100;
-  }
-}
+// ==================== HELPER ====================
 
 function getAdjacentKey(key: string): string | null {
   const keyboard: Record<string, string[]> = {

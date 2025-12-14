@@ -547,6 +547,166 @@ serve(async (req) => {
       });
     }
 
+    // POST /test-antibot - Test against bot detection services
+    if (req.method === 'POST' && path === '/test-antibot') {
+      const { sites } = await req.json();
+      
+      // List of bot detection test sites
+      const testSites = sites || [
+        { name: 'SannySoft', url: 'https://bot.sannysoft.com/' },
+        { name: 'Incolumitas', url: 'https://bot.incolumitas.com/' },
+        { name: 'BrowserLeaks Canvas', url: 'https://browserleaks.com/canvas' },
+        { name: 'PixelScan', url: 'https://pixelscan.net/' },
+        { name: 'CreepJS', url: 'https://abrahamjuliot.github.io/creepjs/' },
+      ];
+      
+      console.log(`[runner-test] Testing against ${testSites.length} antibot sites`);
+      
+      const results: any[] = [];
+      
+      for (const site of testSites) {
+        console.log(`[runner-test] Testing: ${site.name}`);
+        
+        try {
+          // Navigate to site
+          const navStart = Date.now();
+          const navResult = await fetch(`${RUNNER_API_URL}/execute`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ 
+              action: 'navigate', 
+              url: site.url,
+              timeout: 30000 
+            })
+          }).then(r => r.json());
+          
+          if (!navResult.success) {
+            results.push({
+              site: site.name,
+              url: site.url,
+              success: false,
+              error: navResult.error || 'Navigation failed'
+            });
+            continue;
+          }
+          
+          // Wait for page to fully load and run detection tests
+          await new Promise(r => setTimeout(r, 3000));
+          
+          // Perform some human-like actions
+          await fetch(`${RUNNER_API_URL}/execute`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: 'scroll', coordinates: { y: 300 } })
+          });
+          
+          await new Promise(r => setTimeout(r, 1000));
+          
+          await fetch(`${RUNNER_API_URL}/execute`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: 'mousemove', coordinates: { x: 600, y: 400 } })
+          });
+          
+          await new Promise(r => setTimeout(r, 500));
+          
+          // Take screenshot
+          const screenshotResult = await fetch(`${RUNNER_API_URL}/execute`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: 'screenshot' })
+          }).then(r => r.json());
+          
+          // Try to extract detection results via page evaluation
+          let detectionResults: any = null;
+          try {
+            const evalResult = await fetch(`${RUNNER_API_URL}/execute`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ 
+                action: 'evaluate',
+                script: `
+                  (function() {
+                    const results = {};
+                    
+                    // Try to get navigator.webdriver status
+                    results.webdriver = navigator.webdriver;
+                    
+                    // Check for automation indicators
+                    results.automationControlled = !!window.cdc_adoQpoasnfa76pfcZLmcfl_Array;
+                    results.hasChrome = !!window.chrome;
+                    results.hasPlugins = navigator.plugins.length > 0;
+                    results.languagesCount = navigator.languages?.length || 0;
+                    
+                    // Check for SannySoft specific results
+                    const failedTests = document.querySelectorAll('td.failed');
+                    if (failedTests.length > 0) {
+                      results.failedTests = Array.from(failedTests).map(td => 
+                        td.previousElementSibling?.textContent?.trim() || 'unknown'
+                      );
+                    }
+                    
+                    // Check for CreepJS score
+                    const creepScore = document.querySelector('.fingerprint-header .grade');
+                    if (creepScore) {
+                      results.creepjsGrade = creepScore.textContent?.trim();
+                    }
+                    
+                    return results;
+                  })()
+                `
+              })
+            }).then(r => r.json());
+            
+            if (evalResult.success) {
+              detectionResults = evalResult.data;
+            }
+          } catch (e) {
+            console.log(`[runner-test] Could not extract detection data from ${site.name}`);
+          }
+          
+          results.push({
+            site: site.name,
+            url: site.url,
+            success: true,
+            load_time_ms: Date.now() - navStart,
+            detection_data: detectionResults,
+            screenshot: screenshotResult.screenshot
+          });
+          
+        } catch (error) {
+          results.push({
+            site: site.name,
+            url: site.url,
+            success: false,
+            error: error instanceof Error ? error.message : String(error)
+          });
+        }
+      }
+      
+      // Summary
+      const passed = results.filter(r => r.success && !r.detection_data?.webdriver).length;
+      const failed = results.filter(r => !r.success || r.detection_data?.webdriver).length;
+      
+      return new Response(JSON.stringify({
+        summary: {
+          total: results.length,
+          passed,
+          failed,
+          verdict: failed === 0 ? 'STEALTH_OK' : passed > failed ? 'MOSTLY_OK' : 'DETECTED'
+        },
+        results: results.map(r => ({
+          ...r,
+          screenshot: r.screenshot ? `${r.screenshot.substring(0, 50)}...` : null
+        })),
+        screenshots: Object.fromEntries(
+          results.filter(r => r.screenshot).map(r => [r.site, r.screenshot])
+        )
+      }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
     return new Response(JSON.stringify({ error: 'Not found' }), {
       status: 404,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
