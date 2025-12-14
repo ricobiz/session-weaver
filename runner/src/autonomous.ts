@@ -250,10 +250,6 @@ export class AutonomousExecutor {
             networkRequests.slice(-10),
             agentEndpoint
           );
-            beforeState.url !== afterState.url,
-            networkRequests.slice(-10),
-            agentEndpoint
-          );
 
           if (verificationResult) {
             totalVerificationScore += verificationResult.confidence;
