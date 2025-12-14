@@ -67,9 +67,14 @@ export interface Scenario {
 export interface Session {
   id: string;
   profile_id: string;
-  scenario_id: string;
+  scenario_id: string | null;
   profiles: Profile;
-  scenarios: Scenario;
+  scenarios?: Scenario;  // Optional for autonomous mode
+  metadata?: {
+    goal?: string;
+    task_id?: string;
+    autonomous_mode?: boolean;
+  };
   retry_count?: number;
   max_retries?: number;
   last_successful_step?: number | null;
@@ -98,6 +103,12 @@ export interface Job {
   job_id: string;
   session: Session;
   delay_before_start_ms: number;
+  execution_mode?: 'scenario' | 'autonomous';
+  autonomous?: {
+    goal: string;
+    task_id: string;
+    agent_endpoint: string;
+  };
 }
 
 // Session update payload
