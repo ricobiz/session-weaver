@@ -365,6 +365,188 @@ serve(async (req) => {
       });
     }
 
+    // POST /test-human - Test human-like behavior (mouse, scroll, drag, etc.)
+    if (req.method === 'POST' && path === '/test-human') {
+      const { test_type } = await req.json();
+      const testType = test_type || 'full';
+      
+      console.log(`[runner-test] Testing human-like behavior: ${testType}`);
+      
+      const results: any = { test_type: testType, actions: [] };
+      
+      // Navigate to test page first
+      await fetch(`${RUNNER_API_URL}/execute`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'navigate', url: 'https://www.google.com' })
+      });
+      
+      await new Promise(r => setTimeout(r, 500));
+      
+      switch (testType) {
+        case 'mouse': {
+          // Test mouse movement with micro-jitter
+          let start = Date.now();
+          let result = await fetch(`${RUNNER_API_URL}/execute`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: 'mousemove', coordinates: { x: 500, y: 300 } })
+          }).then(r => r.json());
+          
+          results.actions.push({
+            action: 'mousemove',
+            duration_ms: Date.now() - start,
+            success: result.success,
+            description: 'Mouse moved with Bezier curve + micro-jitter'
+          });
+          
+          // Test area click
+          start = Date.now();
+          result = await fetch(`${RUNNER_API_URL}/execute`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: 'click', coordinates: { x: 500, y: 300 }, click_area_radius: 10 })
+          }).then(r => r.json());
+          
+          results.actions.push({
+            action: 'click (10px area)',
+            duration_ms: Date.now() - start,
+            success: result.success,
+            description: 'Click random point within 10px radius'
+          });
+          
+          results.screenshot = result.screenshot;
+          break;
+        }
+        
+        case 'scroll': {
+          // Scroll down with natural easing
+          let start = Date.now();
+          let result = await fetch(`${RUNNER_API_URL}/execute`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: 'scroll', coordinates: { y: 600 } })
+          }).then(r => r.json());
+          
+          results.actions.push({
+            action: 'scroll down 600px',
+            duration_ms: Date.now() - start,
+            success: result.success,
+            description: 'Smooth scroll with ease-in-out'
+          });
+          
+          await new Promise(r => setTimeout(r, 300));
+          
+          // Scroll up
+          start = Date.now();
+          result = await fetch(`${RUNNER_API_URL}/execute`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: 'scroll', coordinates: { y: -400 } })
+          }).then(r => r.json());
+          
+          results.actions.push({
+            action: 'scroll up 400px',
+            duration_ms: Date.now() - start,
+            success: result.success,
+            description: 'Natural deceleration scroll'
+          });
+          
+          results.screenshot = result.screenshot;
+          break;
+        }
+        
+        case 'drag': {
+          const start = Date.now();
+          const result = await fetch(`${RUNNER_API_URL}/execute`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ 
+              action: 'drag', 
+              coordinates: { x: 200, y: 200 },
+              toCoordinates: { x: 600, y: 400 },
+              click_area_radius: 8
+            })
+          }).then(r => r.json());
+          
+          results.actions.push({
+            action: 'drag',
+            duration_ms: Date.now() - start,
+            success: result.success,
+            description: 'Drag from (200,200) to (600,400) with area variance'
+          });
+          
+          results.screenshot = result.screenshot;
+          break;
+        }
+        
+        case 'idle': {
+          const start = Date.now();
+          const result = await fetch(`${RUNNER_API_URL}/execute`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: 'idle', duration: 3000 })
+          }).then(r => r.json());
+          
+          results.actions.push({
+            action: 'idle micro-movements',
+            duration_ms: Date.now() - start,
+            success: result.success,
+            description: 'Idle mouse jitter for 3 seconds'
+          });
+          
+          results.screenshot = result.screenshot;
+          break;
+        }
+        
+        case 'full':
+        default: {
+          // Full interaction sequence
+          const sequence = [
+            { action: 'mousemove', coordinates: { x: 400, y: 200 }, desc: 'Move to (400,200)' },
+            { action: 'click', coordinates: { x: 960, y: 400 }, click_area_radius: 8, desc: 'Click center-ish' },
+            { action: 'scroll', coordinates: { y: 400 }, desc: 'Scroll down' },
+            { action: 'mousemove', coordinates: { x: 800, y: 500 }, desc: 'Move to (800,500)' },
+            { action: 'scroll', coordinates: { y: -200 }, desc: 'Scroll up' },
+            { action: 'click', selector: 'textarea[name="q"], input[name="q"]', click_area_radius: 5, desc: 'Click search' },
+          ];
+          
+          for (const cmd of sequence) {
+            const start = Date.now();
+            const result = await fetch(`${RUNNER_API_URL}/execute`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(cmd)
+            }).then(r => r.json());
+            
+            results.actions.push({
+              action: cmd.desc || cmd.action,
+              duration_ms: Date.now() - start,
+              success: result.success
+            });
+            
+            results.screenshot = result.screenshot;
+            await new Promise(r => setTimeout(r, 100));
+          }
+          break;
+        }
+      }
+      
+      // Calculate stats
+      const totalDuration = results.actions.reduce((sum: number, a: any) => sum + (a.duration_ms || 0), 0);
+      const successRate = results.actions.filter((a: any) => a.success).length / results.actions.length * 100;
+      
+      results.stats = {
+        total_duration_ms: totalDuration,
+        success_rate: `${successRate.toFixed(0)}%`,
+        actions_count: results.actions.length
+      };
+      
+      return new Response(JSON.stringify(results), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
     return new Response(JSON.stringify({ error: 'Not found' }), {
       status: 404,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
