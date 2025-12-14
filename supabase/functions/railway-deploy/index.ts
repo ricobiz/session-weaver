@@ -342,6 +342,7 @@ Deno.serve(async (req) => {
           NODE_ENV: 'production',
           HEADLESS: 'true',
           MAX_CONCURRENT_SESSIONS: '3',
+          HTTP_API_PORT: '3001',
         };
 
         for (const [name, value] of Object.entries(variables)) {
