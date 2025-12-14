@@ -203,13 +203,19 @@ function getStealthScript(fingerprint?: Fingerprint): string {
         if (type === 'image/png' || type === undefined) {
           const ctx = this.getContext('2d');
           if (ctx) {
-            // Add subtle noise to prevent fingerprinting
-            const imageData = ctx.getImageData(0, 0, this.width, this.height);
-            for (let i = 0; i < imageData.data.length; i += 4) {
-              // Very subtle noise (±1) that doesn't affect visual appearance
-              imageData.data[i] = Math.max(0, Math.min(255, imageData.data[i] + (Math.random() > 0.5 ? 1 : -1)));
-            }
-            ctx.putImageData(imageData, 0, 0);
+            try {
+              // Add subtle noise to all RGB channels
+              const imageData = ctx.getImageData(0, 0, this.width, this.height);
+              const noise = () => Math.random() > 0.5 ? 1 : -1;
+              const clamp = (v) => Math.max(0, Math.min(255, v));
+              for (let i = 0; i < imageData.data.length; i += 4) {
+                imageData.data[i]     = clamp(imageData.data[i] + noise());     // R
+                imageData.data[i + 1] = clamp(imageData.data[i + 1] + noise()); // G
+                imageData.data[i + 2] = clamp(imageData.data[i + 2] + noise()); // B
+                // Alpha unchanged
+              }
+              ctx.putImageData(imageData, 0, 0);
+            } catch (e) {}
           }
         }
         return originalToDataURL.apply(this, arguments);
@@ -282,7 +288,7 @@ function getStealthScript(fingerprint?: Fingerprint): string {
         return nativeToString.call(this);
       };
 
-      console.log('[Stealth] Anti-detection patches applied');
+      // Stealth patches applied silently (no console.log in production)
     })();
   `;
 }

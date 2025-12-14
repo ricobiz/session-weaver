@@ -3,6 +3,7 @@ import { Session, LogLevel } from './types';
 import { ApiClient } from './api';
 import { log as globalLog, createSessionLogger } from './logger';
 import { detectCaptcha, resolveCaptcha } from './captcha';
+import { TIMEOUTS, LIMITS } from './config';
 
 interface AutonomousConfig {
   agentEndpoint: string;
@@ -53,7 +54,7 @@ interface VerificationResult {
 
 const DEFAULT_CONFIG: AutonomousConfig = {
   agentEndpoint: '',
-  maxActions: 50,
+  maxActions: LIMITS.MAX_AUTONOMOUS_ACTIONS,
   verificationEnabled: true,
 };
 
@@ -79,12 +80,16 @@ export class AutonomousExecutor {
     let actionsExecuted = 0;
     let totalVerificationScore = 0;
     let verifiedActions = 0;
-    const networkRequests: any[] = [];
+    const networkRequests: { url: string; method: string; timestamp: number }[] = [];
+    const MAX_NETWORK_REQUESTS = 100;
 
     sessionLog('info', `Starting autonomous execution for goal: ${goal}`);
 
-    // Track network requests
+    // Track network requests with circular buffer
     page.on('request', (request) => {
+      if (networkRequests.length >= MAX_NETWORK_REQUESTS) {
+        networkRequests.shift(); // Remove oldest
+      }
       networkRequests.push({
         url: request.url(),
         method: request.method(),
@@ -94,7 +99,7 @@ export class AutonomousExecutor {
 
     try {
       // Navigate to start URL
-      await page.goto(startUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
+      await page.goto(startUrl, { waitUntil: 'domcontentloaded', timeout: TIMEOUTS.NAVIGATION });
       await this.api.updateSessionUrl(session.id, page.url());
 
       while (actionsExecuted < this.config.maxActions) {
@@ -165,7 +170,7 @@ export class AutonomousExecutor {
         actionsExecuted++;
 
         // Wait for page to stabilize
-        await page.waitForTimeout(500);
+        await page.waitForTimeout(TIMEOUTS.PAGE_STABILIZE);
 
         // Capture state after action
         const afterState = await this.captureState(page);
@@ -213,10 +218,7 @@ export class AutonomousExecutor {
         // Update session URL
         await this.api.updateSessionUrl(session.id, page.url());
 
-        // Clear tracked requests periodically
-        if (networkRequests.length > 100) {
-          networkRequests.splice(0, networkRequests.length - 50);
-        }
+        // Network requests are now managed as circular buffer - no cleanup needed
 
         // Report result and get feedback
         if (actionsExecuted % 5 === 0 || !actionResult.success) {
@@ -407,13 +409,16 @@ export class AutonomousExecutor {
   private async executeAction(
     page: Page,
     action: AgentAction,
-    log: (level: LogLevel, message: string) => void
+    log: (level: LogLevel, message: string) => void,
+    retryCount = 0
   ): Promise<{ success: boolean; error?: string }> {
+    const MAX_RETRIES = 2;
+    
     try {
       switch (action.type) {
         case 'navigate':
           if (action.url) {
-            await page.goto(action.url, { waitUntil: 'domcontentloaded', timeout: 30000 });
+            await page.goto(action.url, { waitUntil: 'domcontentloaded', timeout: TIMEOUTS.NAVIGATION });
           }
           break;
 
@@ -421,7 +426,7 @@ export class AutonomousExecutor {
           if (action.coordinates) {
             await page.mouse.click(action.coordinates.x, action.coordinates.y);
           } else if (action.selector) {
-            await page.click(action.selector, { timeout: 10000 });
+            await page.click(action.selector, { timeout: TIMEOUTS.ELEMENT_CLICK });
           }
           break;
 
@@ -452,6 +457,18 @@ export class AutonomousExecutor {
       return { success: true };
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
+      
+      // Retry for recoverable errors (timeout, element not found)
+      const isRecoverable = errorMessage.includes('timeout') || 
+                           errorMessage.includes('waiting for selector') ||
+                           errorMessage.includes('Target closed');
+      
+      if (isRecoverable && retryCount < MAX_RETRIES) {
+        log('warning', `Action ${action.type} failed, retrying (${retryCount + 1}/${MAX_RETRIES}): ${errorMessage}`);
+        await page.waitForTimeout(500 * (retryCount + 1)); // Exponential backoff
+        return this.executeAction(page, action, log, retryCount + 1);
+      }
+      
       log('error', `Action ${action.type} failed: ${errorMessage}`);
       return { success: false, error: errorMessage };
     }

@@ -73,10 +73,12 @@ async function pollForJobs(): Promise<void> {
     activeSessionCount++;
     healthReporter.incrementActive();
     
-    executeJob(job).finally(() => {
-      activeSessionCount--;
-      healthReporter.decrementActive();
-    });
+    executeJob(job)
+      .catch(err => log('error', `Unhandled job error: ${err}`))
+      .finally(() => {
+        activeSessionCount--;
+        healthReporter.decrementActive();
+      });
 
   } catch (error) {
     log('error', `Error polling for jobs: ${error}`);
@@ -125,10 +127,13 @@ async function main(): Promise<void> {
     log('info', 'Starting job polling...');
 
     const poll = async () => {
+      const start = Date.now();
       await pollForJobs();
+      const elapsed = Date.now() - start;
+      const nextDelay = Math.max(0, config.pollIntervalMs - elapsed);
       
       if (!isShuttingDown) {
-        setTimeout(poll, config.pollIntervalMs);
+        setTimeout(poll, nextDelay);
       }
     };
 
