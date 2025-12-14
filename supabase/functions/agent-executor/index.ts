@@ -84,6 +84,16 @@ CRITICAL RULES:
 5. Click actions MUST include coordinates {x, y} - calculate from screenshot analysis
 6. Self-verify each action worked before proceeding
 
+LEARNING FROM HISTORY:
+- You receive PREVIOUS_ACTIONS showing what you already did
+- If you clicked on something and URL didn't change + page looks same = TRY DIFFERENT APPROACH:
+  * Scroll down/up to reveal hidden elements
+  * Look for alternative buttons/links
+  * Try clicking at slightly different coordinates
+  * Type into focused field if click selected an input
+- If you already clicked same area 2+ times with no result = STOP repeating, do something else
+- If cookie/popup banner blocks page = close it first, but don't waste >2 clicks on it
+
 AVAILABLE ACTIONS:
 - navigate: { type: "navigate", url: "https://..." }
 - click: { type: "click", coordinates: { x: 500, y: 300 } }  // ALWAYS use coordinates!
@@ -115,7 +125,9 @@ OUTPUT FORMAT (only valid JSON):
   "verification_criteria": [{ "type": "url_contains|element_visible|text_appears", "value": "..." }]
 }
 
-IMPORTANT: When goal is achieved, use action type "complete" and include ALL generated_data!`;
+IMPORTANT: 
+- When goal is achieved, use action type "complete" and include ALL generated_data!
+- If stuck after 5+ similar actions with no progress, use "fail" action with reason explaining the problem`;
 
 const VISION_ANALYSIS_PROMPT = `You are analyzing a screenshot to help with web automation.
 
