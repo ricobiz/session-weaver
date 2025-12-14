@@ -359,13 +359,18 @@ export function SystemSetup() {
 
                 <Button
                   onClick={deployToRailway}
-                  disabled={isDeploying}
+                  disabled={isDeploying || deployResult?.success}
                   className="w-full gap-2"
                 >
                   {isDeploying ? (
                     <>
                       <Loader2 className="w-4 h-4 animate-spin" />
                       Deploying...
+                    </>
+                  ) : deployResult?.success ? (
+                    <>
+                      <Check className="w-4 h-4" />
+                      Deployed - Wait ~2 min
                     </>
                   ) : (
                     <>
