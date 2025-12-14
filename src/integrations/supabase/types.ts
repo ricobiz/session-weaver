@@ -569,6 +569,36 @@ export type Database = {
         }
         Relationships: []
       }
+      railway_config: {
+        Row: {
+          created_at: string
+          environment_id: string | null
+          id: string
+          project_id: string
+          runner_url: string | null
+          service_id: string | null
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          environment_id?: string | null
+          id?: string
+          project_id: string
+          runner_url?: string | null
+          service_id?: string | null
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          environment_id?: string | null
+          id?: string
+          project_id?: string
+          runner_url?: string | null
+          service_id?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
       runner_health: {
         Row: {
           active_sessions: number | null
