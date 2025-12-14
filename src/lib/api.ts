@@ -13,6 +13,7 @@ export interface DashboardStats {
   avgDuration: string;
   totalProfiles: number;
   totalScenarios: number;
+  activeTasks: number;
 }
 
 export interface SessionWithRelations extends Session {
@@ -32,17 +33,41 @@ export interface RunnerHealth {
   metadata: unknown;
 }
 
+export interface Task {
+  id: string;
+  name: string;
+  description?: string;
+  target_platform: string;
+  entry_method: string;
+  target_url?: string;
+  search_query?: string;
+  goal_type: string;
+  behavior_config: unknown;
+  profile_ids: string[];
+  run_count: number;
+  status: string;
+  generated_scenario_id?: string;
+  sessions_created: number;
+  sessions_completed: number;
+  sessions_failed: number;
+  created_at: string;
+  updated_at: string;
+  started_at?: string;
+  completed_at?: string;
+}
+
 // Fetch dashboard stats
 export async function fetchStats(): Promise<DashboardStats> {
   const today = new Date().toISOString().split('T')[0];
 
-  const [activeRes, completedRes, failedRes, profilesRes, scenariosRes, avgRes] = await Promise.all([
+  const [activeRes, completedRes, failedRes, profilesRes, scenariosRes, avgRes, tasksRes] = await Promise.all([
     supabase.from('sessions').select('*', { count: 'exact', head: true }).eq('status', 'running'),
     supabase.from('sessions').select('*', { count: 'exact', head: true }).eq('status', 'success').gte('completed_at', today),
     supabase.from('sessions').select('*', { count: 'exact', head: true }).eq('status', 'error').gte('completed_at', today),
     supabase.from('profiles').select('*', { count: 'exact', head: true }),
     supabase.from('scenarios').select('*', { count: 'exact', head: true }),
-    supabase.from('sessions').select('execution_time_ms').not('execution_time_ms', 'is', null).limit(100)
+    supabase.from('sessions').select('execution_time_ms').not('execution_time_ms', 'is', null).limit(100),
+    supabase.from('tasks').select('*', { count: 'exact', head: true }).eq('status', 'active')
   ]);
 
   const avgMs = avgRes.data?.length 
@@ -55,7 +80,8 @@ export async function fetchStats(): Promise<DashboardStats> {
     failedToday: failedRes.count || 0,
     avgDuration: avgMs > 0 ? `${Math.floor(avgMs / 60000)}m ${Math.floor((avgMs % 60000) / 1000)}s` : '0m 0s',
     totalProfiles: profilesRes.count || 0,
-    totalScenarios: scenariosRes.count || 0
+    totalScenarios: scenariosRes.count || 0,
+    activeTasks: tasksRes.count || 0
   };
 }
 
@@ -133,6 +159,62 @@ export async function fetchRunnerHealth(): Promise<RunnerHealth[]> {
     return [];
   }
   return data || [];
+}
+
+// Fetch all tasks
+export async function fetchTasks(): Promise<Task[]> {
+  const { data, error } = await supabase
+    .from('tasks')
+    .select('*')
+    .order('created_at', { ascending: false });
+
+  if (error) {
+    console.error('Error fetching tasks:', error);
+    return [];
+  }
+  return data || [];
+}
+
+// Create a new task
+export async function createTask(task: Omit<Task, 'id' | 'created_at' | 'updated_at' | 'sessions_created' | 'sessions_completed' | 'sessions_failed' | 'status'>): Promise<Task | null> {
+  const { data, error } = await supabase.functions.invoke('session-api', {
+    method: 'POST',
+    body: { ...task, _path: '/tasks', _method: 'POST' }
+  });
+
+  if (error) {
+    console.error('Error creating task:', error);
+    return null;
+  }
+  return data;
+}
+
+// Generate scenario from task
+export async function generateScenarioFromTask(taskId: string): Promise<Scenario | null> {
+  const { data, error } = await supabase.functions.invoke('session-api', {
+    method: 'POST',
+    body: { _path: `/tasks/${taskId}/generate-scenario`, _method: 'POST' }
+  });
+
+  if (error) {
+    console.error('Error generating scenario:', error);
+    return null;
+  }
+  return data;
+}
+
+// Start task execution
+export async function startTask(taskId: string): Promise<{ created: number; sessions: Session[] } | null> {
+  const { data, error } = await supabase.functions.invoke('session-api', {
+    method: 'POST',
+    body: { _path: `/tasks/${taskId}/start`, _method: 'POST' }
+  });
+
+  if (error) {
+    console.error('Error starting task:', error);
+    return null;
+  }
+  return data;
 }
 
 // Create a new profile
@@ -236,6 +318,18 @@ export function subscribeToRunnerHealth(callback: (payload: any) => void) {
     .on(
       'postgres_changes',
       { event: '*', schema: 'public', table: 'runner_health' },
+      callback
+    )
+    .subscribe();
+}
+
+// Subscribe to task updates
+export function subscribeToTasks(callback: (payload: any) => void) {
+  return supabase
+    .channel('tasks-changes')
+    .on(
+      'postgres_changes',
+      { event: '*', schema: 'public', table: 'tasks' },
       callback
     )
     .subscribe();

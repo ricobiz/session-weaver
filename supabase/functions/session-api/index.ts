@@ -480,6 +480,332 @@ serve(async (req) => {
     }
 
     // ============================================
+    // TASK ENDPOINTS
+    // ============================================
+
+    // GET /tasks - Get all tasks
+    if (req.method === 'GET' && path === '/tasks') {
+      const { data } = await supabase
+        .from('tasks')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      return new Response(JSON.stringify(data || []), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    // POST /tasks - Create a new task
+    if (req.method === 'POST' && path === '/tasks') {
+      const body = await req.json();
+      
+      const { data: task, error } = await supabase
+        .from('tasks')
+        .insert({
+          name: body.name,
+          description: body.description,
+          target_platform: body.target_platform,
+          entry_method: body.entry_method,
+          target_url: body.target_url,
+          search_query: body.search_query,
+          goal_type: body.goal_type,
+          behavior_config: body.behavior_config || {},
+          profile_ids: body.profile_ids || [],
+          run_count: body.run_count || 1,
+          status: 'draft',
+        })
+        .select()
+        .single();
+
+      if (error) {
+        console.error('[session-api] Error creating task:', error);
+        return new Response(JSON.stringify({ error: 'Failed to create task' }), {
+          status: 500,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      return new Response(JSON.stringify(task), {
+        status: 201,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    // POST /tasks/:id/generate-scenario - Generate scenario from task
+    if (req.method === 'POST' && path.match(/^\/tasks\/[^/]+\/generate-scenario$/)) {
+      const taskId = path.split('/')[2];
+      
+      const { data: task, error: taskError } = await supabase
+        .from('tasks')
+        .select('*')
+        .eq('id', taskId)
+        .single();
+
+      if (taskError || !task) {
+        return new Response(JSON.stringify({ error: 'Task not found' }), {
+          status: 404,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      // Generate scenario steps based on task configuration
+      // This is currently rule-based, will be AI-powered in next phase
+      const steps: any[] = [];
+      const behaviorConfig = task.behavior_config as any;
+      
+      // Entry step
+      if (task.entry_method === 'url' && task.target_url) {
+        steps.push({ action: 'open', target: task.target_url });
+      } else if (task.entry_method === 'search' && task.search_query) {
+        steps.push({ action: 'open', target: 'https://www.google.com' });
+        steps.push({ action: 'wait', duration: 2 });
+        steps.push({ action: 'click', selector: 'input[name="q"]' });
+        steps.push({ action: 'comment', text: task.search_query, selector: 'input[name="q"]' });
+        steps.push({ action: 'click', selector: 'input[type="submit"]' });
+        steps.push({ action: 'wait', duration: 3 });
+      }
+
+      // Initial wait
+      steps.push({ action: 'wait', duration: 3 });
+
+      // Pre-action scroll if configured
+      if (behaviorConfig?.scroll_before_action) {
+        steps.push({ action: 'scroll', randomized: true });
+        steps.push({ action: 'wait', duration: 2 });
+      }
+
+      // Goal-specific actions
+      const minDuration = behaviorConfig?.min_duration || 30;
+      const maxDuration = behaviorConfig?.max_duration || 120;
+      const avgDuration = Math.floor((minDuration + maxDuration) / 2);
+
+      switch (task.goal_type) {
+        case 'play':
+          steps.push({ action: 'play', duration: avgDuration, randomized: behaviorConfig?.randomize_timing });
+          break;
+        case 'like':
+          steps.push({ action: 'scroll', randomized: true });
+          steps.push({ action: 'wait', duration: 5 });
+          steps.push({ action: 'like' });
+          break;
+        case 'comment':
+          steps.push({ action: 'scroll', randomized: true });
+          steps.push({ action: 'wait', duration: 5 });
+          steps.push({ action: 'comment', text: 'Great content!' });
+          break;
+        case 'mix':
+          steps.push({ action: 'play', duration: Math.floor(avgDuration * 0.7), randomized: true });
+          steps.push({ action: 'scroll', randomized: true });
+          steps.push({ action: 'like' });
+          if (Math.random() > 0.5) {
+            steps.push({ action: 'comment', text: 'Nice!' });
+          }
+          break;
+      }
+
+      // Final wait
+      steps.push({ action: 'wait', duration: 2 });
+
+      // Calculate estimated duration
+      const estimatedDuration = steps.reduce((sum, step) => {
+        return sum + (step.duration || (step.action === 'play' ? avgDuration : 5));
+      }, 0);
+
+      // Create scenario
+      const { data: scenario, error: scenarioError } = await supabase
+        .from('scenarios')
+        .insert({
+          name: `${task.name} - Auto Generated`,
+          description: `Auto-generated scenario for task: ${task.description || task.name}`,
+          steps,
+          estimated_duration_seconds: estimatedDuration,
+          is_valid: true,
+          tags: ['auto-generated', task.goal_type],
+        })
+        .select()
+        .single();
+
+      if (scenarioError) {
+        console.error('[session-api] Error creating scenario:', scenarioError);
+        return new Response(JSON.stringify({ error: 'Failed to create scenario' }), {
+          status: 500,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      // Update task with generated scenario
+      await supabase
+        .from('tasks')
+        .update({ generated_scenario_id: scenario.id })
+        .eq('id', taskId);
+
+      return new Response(JSON.stringify(scenario), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    // POST /tasks/:id/start - Start task execution
+    if (req.method === 'POST' && path.match(/^\/tasks\/[^/]+\/start$/)) {
+      const taskId = path.split('/')[2];
+      
+      const { data: task, error: taskError } = await supabase
+        .from('tasks')
+        .select('*')
+        .eq('id', taskId)
+        .single();
+
+      if (taskError || !task) {
+        return new Response(JSON.stringify({ error: 'Task not found' }), {
+          status: 404,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      if (!task.generated_scenario_id) {
+        return new Response(JSON.stringify({ error: 'Task has no generated scenario' }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      const profileIds = task.profile_ids || [];
+      if (profileIds.length === 0) {
+        return new Response(JSON.stringify({ error: 'No profiles assigned to task' }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      // Create sessions for each profile × run_count
+      const sessions = [];
+      for (const profileId of profileIds) {
+        for (let i = 0; i < (task.run_count || 1); i++) {
+          sessions.push({
+            profile_id: profileId,
+            scenario_id: task.generated_scenario_id,
+            task_id: taskId,
+            status: 'queued',
+            profile_state: 'unknown',
+          });
+        }
+      }
+
+      const { data: createdSessions, error: sessionError } = await supabase
+        .from('sessions')
+        .insert(sessions)
+        .select();
+
+      if (sessionError) {
+        console.error('[session-api] Error creating sessions:', sessionError);
+        return new Response(JSON.stringify({ error: 'Failed to create sessions' }), {
+          status: 500,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      // Add to execution queue
+      const queueEntries = createdSessions!.map((s) => ({
+        session_id: s.id,
+        priority: 0,
+      }));
+
+      await supabase.from('execution_queue').insert(queueEntries);
+
+      // Update task status
+      await supabase
+        .from('tasks')
+        .update({
+          status: 'active',
+          started_at: new Date().toISOString(),
+          sessions_created: createdSessions!.length,
+        })
+        .eq('id', taskId);
+
+      return new Response(JSON.stringify({
+        created: createdSessions!.length,
+        sessions: createdSessions,
+      }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    // PATCH /sessions/:id/captcha - Update captcha status
+    if (req.method === 'PATCH' && path.match(/^\/sessions\/[^/]+\/captcha$/)) {
+      const sessionId = path.split('/')[2];
+      const body = await req.json();
+
+      const updateData: Record<string, unknown> = {
+        captcha_status: body.status,
+      };
+
+      if (body.status === 'detected') {
+        updateData.captcha_detected_at = new Date().toISOString();
+      } else if (body.status === 'solved' || body.status === 'failed') {
+        updateData.captcha_resolved_at = new Date().toISOString();
+      }
+
+      const { error } = await supabase
+        .from('sessions')
+        .update(updateData)
+        .eq('id', sessionId);
+
+      if (error) {
+        return new Response(JSON.stringify({ error: 'Failed to update captcha status' }), {
+          status: 500,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      return new Response(JSON.stringify({ success: true }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    // PATCH /sessions/:id/url - Update current URL
+    if (req.method === 'PATCH' && path.match(/^\/sessions\/[^/]+\/url$/)) {
+      const sessionId = path.split('/')[2];
+      const { url } = await req.json();
+
+      const { error } = await supabase
+        .from('sessions')
+        .update({ current_url: url })
+        .eq('id', sessionId);
+
+      if (error) {
+        return new Response(JSON.stringify({ error: 'Failed to update URL' }), {
+          status: 500,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      return new Response(JSON.stringify({ success: true }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    // PATCH /sessions/:id/profile-state - Update profile auth state
+    if (req.method === 'PATCH' && path.match(/^\/sessions\/[^/]+\/profile-state$/)) {
+      const sessionId = path.split('/')[2];
+      const { state } = await req.json();
+
+      const { error } = await supabase
+        .from('sessions')
+        .update({ profile_state: state })
+        .eq('id', sessionId);
+
+      if (error) {
+        return new Response(JSON.stringify({ error: 'Failed to update profile state' }), {
+          status: 500,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      return new Response(JSON.stringify({ success: true }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    // ============================================
     // AI ENDPOINTS (Mocked for now - OpenRouter ready)
     // ============================================
 
