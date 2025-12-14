@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import { Header } from '@/components/Header';
 import { StatCard } from '@/components/StatCard';
 import { SessionCard } from '@/components/SessionCard';
@@ -20,6 +21,7 @@ import { GeneratedScenarioPreview } from '@/components/GeneratedScenarioPreview'
 import { AISettingsPanel } from '@/components/AISettingsPanel';
 import { OpenRouterBalance } from '@/components/OpenRouterBalance';
 import { RunnerStatus } from '@/components/RunnerStatus';
+import { Button } from '@/components/ui/button';
 import {
   useStats, 
   useProfiles, 
@@ -36,7 +38,6 @@ import {
 } from '@/hooks/useSessionData';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Button } from '@/components/ui/button';
 import { toast } from '@/hooks/use-toast';
 import { 
   Activity, 
@@ -56,7 +57,8 @@ import {
   Eye,
   Settings,
   Cpu,
-  Shield
+  Shield,
+  Zap
 } from 'lucide-react';
 import { Database } from '@/integrations/supabase/types';
 

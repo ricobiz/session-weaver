@@ -1,4 +1,5 @@
-import { Activity, Settings, Bell } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { Activity, Settings, Bell, Zap } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
 export function Header() {
@@ -10,12 +11,18 @@ export function Header() {
             <Activity className="w-4 h-4 text-primary" />
           </div>
           <div>
-            <h1 className="font-semibold text-sm">Session Framework</h1>
-            <p className="text-xs text-muted-foreground">Distributed Simulation Engine</p>
+            <h1 className="font-semibold text-sm">Developer Mode</h1>
+            <p className="text-xs text-muted-foreground">Full System Visibility</p>
           </div>
         </div>
 
         <div className="flex items-center gap-2">
+          <Button variant="ghost" size="sm" asChild className="gap-1.5 text-muted-foreground">
+            <Link to="/">
+              <Zap className="w-4 h-4" />
+              Operator Mode
+            </Link>
+          </Button>
           <Button variant="ghost" size="icon" className="h-8 w-8">
             <Bell className="w-4 h-4" />
           </Button>
