@@ -41,7 +41,9 @@ export function CreateProfileDialog({ open, onOpenChange }: CreateProfileDialogP
         metadata: {},
         sessions_run: 0,
         last_active: null,
-        password_hash: null
+        password_hash: null,
+        auth_state: 'unknown',
+        auth_checked_at: null
       });
 
       toast({

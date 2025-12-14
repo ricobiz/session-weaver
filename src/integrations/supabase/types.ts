@@ -54,6 +54,8 @@ export type Database = {
       }
       profiles: {
         Row: {
+          auth_checked_at: string | null
+          auth_state: string | null
           created_at: string
           email: string
           id: string
@@ -68,6 +70,8 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          auth_checked_at?: string | null
+          auth_state?: string | null
           created_at?: string
           email: string
           id?: string
@@ -82,6 +86,8 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          auth_checked_at?: string | null
+          auth_state?: string | null
           created_at?: string
           email?: string
           id?: string
@@ -266,17 +272,23 @@ export type Database = {
       }
       sessions: {
         Row: {
+          captcha_detected_at: string | null
+          captcha_resolved_at: string | null
+          captcha_status: string | null
           completed_at: string | null
           created_at: string
           current_step: number | null
+          current_url: string | null
           error_message: string | null
           execution_time_ms: number | null
           id: string
           is_resumable: boolean | null
+          last_screenshot_url: string | null
           last_successful_step: number | null
           max_retries: number | null
           metadata: Json | null
           profile_id: string | null
+          profile_state: string | null
           progress: number | null
           resume_metadata: Json | null
           retry_count: number | null
@@ -284,21 +296,28 @@ export type Database = {
           scenario_id: string | null
           started_at: string | null
           status: Database["public"]["Enums"]["session_status"]
+          task_id: string | null
           total_steps: number | null
           updated_at: string
         }
         Insert: {
+          captcha_detected_at?: string | null
+          captcha_resolved_at?: string | null
+          captcha_status?: string | null
           completed_at?: string | null
           created_at?: string
           current_step?: number | null
+          current_url?: string | null
           error_message?: string | null
           execution_time_ms?: number | null
           id?: string
           is_resumable?: boolean | null
+          last_screenshot_url?: string | null
           last_successful_step?: number | null
           max_retries?: number | null
           metadata?: Json | null
           profile_id?: string | null
+          profile_state?: string | null
           progress?: number | null
           resume_metadata?: Json | null
           retry_count?: number | null
@@ -306,21 +325,28 @@ export type Database = {
           scenario_id?: string | null
           started_at?: string | null
           status?: Database["public"]["Enums"]["session_status"]
+          task_id?: string | null
           total_steps?: number | null
           updated_at?: string
         }
         Update: {
+          captcha_detected_at?: string | null
+          captcha_resolved_at?: string | null
+          captcha_status?: string | null
           completed_at?: string | null
           created_at?: string
           current_step?: number | null
+          current_url?: string | null
           error_message?: string | null
           execution_time_ms?: number | null
           id?: string
           is_resumable?: boolean | null
+          last_screenshot_url?: string | null
           last_successful_step?: number | null
           max_retries?: number | null
           metadata?: Json | null
           profile_id?: string | null
+          profile_state?: string | null
           progress?: number | null
           resume_metadata?: Json | null
           retry_count?: number | null
@@ -328,6 +354,7 @@ export type Database = {
           scenario_id?: string | null
           started_at?: string | null
           status?: Database["public"]["Enums"]["session_status"]
+          task_id?: string | null
           total_steps?: number | null
           updated_at?: string
         }
@@ -342,6 +369,90 @@ export type Database = {
           {
             foreignKeyName: "sessions_scenario_id_fkey"
             columns: ["scenario_id"]
+            isOneToOne: false
+            referencedRelation: "scenarios"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "sessions_task_id_fkey"
+            columns: ["task_id"]
+            isOneToOne: false
+            referencedRelation: "tasks"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      tasks: {
+        Row: {
+          behavior_config: Json
+          completed_at: string | null
+          created_at: string
+          description: string | null
+          entry_method: string
+          generated_scenario_id: string | null
+          goal_type: string
+          id: string
+          name: string
+          profile_ids: string[] | null
+          run_count: number | null
+          search_query: string | null
+          sessions_completed: number | null
+          sessions_created: number | null
+          sessions_failed: number | null
+          started_at: string | null
+          status: string
+          target_platform: string
+          target_url: string | null
+          updated_at: string
+        }
+        Insert: {
+          behavior_config?: Json
+          completed_at?: string | null
+          created_at?: string
+          description?: string | null
+          entry_method?: string
+          generated_scenario_id?: string | null
+          goal_type?: string
+          id?: string
+          name: string
+          profile_ids?: string[] | null
+          run_count?: number | null
+          search_query?: string | null
+          sessions_completed?: number | null
+          sessions_created?: number | null
+          sessions_failed?: number | null
+          started_at?: string | null
+          status?: string
+          target_platform: string
+          target_url?: string | null
+          updated_at?: string
+        }
+        Update: {
+          behavior_config?: Json
+          completed_at?: string | null
+          created_at?: string
+          description?: string | null
+          entry_method?: string
+          generated_scenario_id?: string | null
+          goal_type?: string
+          id?: string
+          name?: string
+          profile_ids?: string[] | null
+          run_count?: number | null
+          search_query?: string | null
+          sessions_completed?: number | null
+          sessions_created?: number | null
+          sessions_failed?: number | null
+          started_at?: string | null
+          status?: string
+          target_platform?: string
+          target_url?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "tasks_generated_scenario_id_fkey"
+            columns: ["generated_scenario_id"]
             isOneToOne: false
             referencedRelation: "scenarios"
             referencedColumns: ["id"]

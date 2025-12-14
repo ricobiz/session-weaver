@@ -8,14 +8,20 @@ import {
   fetchSessions,
   fetchSessionLogs,
   fetchRunnerHealth,
+  fetchTasks,
   createProfile,
   createScenario,
+  createTask,
+  generateScenarioFromTask,
+  startTask,
   subscribeToSessions,
   subscribeToLogs,
   subscribeToRunnerHealth,
+  subscribeToTasks,
   DashboardStats,
   SessionWithRelations,
-  RunnerHealth
+  RunnerHealth,
+  Task
 } from '@/lib/api';
 import { Database } from '@/integrations/supabase/types';
 
@@ -121,6 +127,28 @@ export function useRunnerHealth() {
   return query;
 }
 
+export function useTasks() {
+  const queryClient = useQueryClient();
+  
+  const query = useQuery<Task[]>({
+    queryKey: ['tasks'],
+    queryFn: fetchTasks
+  });
+
+  useEffect(() => {
+    const channel = subscribeToTasks(() => {
+      queryClient.invalidateQueries({ queryKey: ['tasks'] });
+      queryClient.invalidateQueries({ queryKey: ['stats'] });
+    });
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [queryClient]);
+
+  return query;
+}
+
 export function useCreateProfile() {
   const queryClient = useQueryClient();
   
@@ -140,6 +168,39 @@ export function useCreateScenario() {
     mutationFn: createScenario,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['scenarios'] });
+      queryClient.invalidateQueries({ queryKey: ['stats'] });
+    }
+  });
+}
+
+export function useCreateTask() {
+  const queryClient = useQueryClient();
+  
+  return useMutation({
+    mutationFn: async (task: Parameters<typeof createTask>[0]) => {
+      const createdTask = await createTask(task);
+      if (createdTask) {
+        // Auto-generate scenario
+        await generateScenarioFromTask(createdTask.id);
+      }
+      return createdTask;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['tasks'] });
+      queryClient.invalidateQueries({ queryKey: ['scenarios'] });
+      queryClient.invalidateQueries({ queryKey: ['stats'] });
+    }
+  });
+}
+
+export function useStartTask() {
+  const queryClient = useQueryClient();
+  
+  return useMutation({
+    mutationFn: startTask,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['tasks'] });
+      queryClient.invalidateQueries({ queryKey: ['sessions'] });
       queryClient.invalidateQueries({ queryKey: ['stats'] });
     }
   });
