@@ -10,6 +10,11 @@ export interface ScenarioStep {
   selector?: string;
   retryable?: boolean;  // Can this step be retried?
   maxRetries?: number;  // Override default retry count
+  // Visual detection
+  visual?: string;      // Visual description for AI detection
+  fallback_visual?: string; // Fallback visual if selector fails
+  x?: number;           // Direct X coordinate
+  y?: number;           // Direct Y coordinate
 }
 
 // Profile with storage state
