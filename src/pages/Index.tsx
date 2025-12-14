@@ -240,10 +240,10 @@ const Index = () => {
                 </div>
               </div>
               <Button 
-                variant="outline" 
+                variant="default" 
                 size="sm"
                 onClick={() => setRightPanelView('setup')}
-                className="gap-2"
+                className="gap-2 bg-orange-500 hover:bg-orange-600 text-white"
               >
                 <Settings className="w-4 h-4" />
                 Open Setup
