@@ -67,6 +67,84 @@ export type Database = {
           },
         ]
       }
+      ai_model_cache: {
+        Row: {
+          capabilities: string[] | null
+          context_length: number | null
+          id: string
+          is_free: boolean | null
+          last_updated_at: string | null
+          name: string | null
+          pricing_input: number | null
+          pricing_output: number | null
+        }
+        Insert: {
+          capabilities?: string[] | null
+          context_length?: number | null
+          id: string
+          is_free?: boolean | null
+          last_updated_at?: string | null
+          name?: string | null
+          pricing_input?: number | null
+          pricing_output?: number | null
+        }
+        Update: {
+          capabilities?: string[] | null
+          context_length?: number | null
+          id?: string
+          is_free?: boolean | null
+          last_updated_at?: string | null
+          name?: string | null
+          pricing_input?: number | null
+          pricing_output?: number | null
+        }
+        Relationships: []
+      }
+      ai_model_config: {
+        Row: {
+          auto_update: boolean | null
+          created_at: string | null
+          fallback_model: string | null
+          id: string
+          last_checked_at: string | null
+          last_updated_at: string | null
+          max_price_per_million_input: number | null
+          max_price_per_million_output: number | null
+          notes: string | null
+          primary_model: string
+          required_capabilities: string[] | null
+          task_type: string
+        }
+        Insert: {
+          auto_update?: boolean | null
+          created_at?: string | null
+          fallback_model?: string | null
+          id?: string
+          last_checked_at?: string | null
+          last_updated_at?: string | null
+          max_price_per_million_input?: number | null
+          max_price_per_million_output?: number | null
+          notes?: string | null
+          primary_model: string
+          required_capabilities?: string[] | null
+          task_type: string
+        }
+        Update: {
+          auto_update?: boolean | null
+          created_at?: string | null
+          fallback_model?: string | null
+          id?: string
+          last_checked_at?: string | null
+          last_updated_at?: string | null
+          max_price_per_million_input?: number | null
+          max_price_per_million_output?: number | null
+          notes?: string | null
+          primary_model?: string
+          required_capabilities?: string[] | null
+          task_type?: string
+        }
+        Relationships: []
+      }
       ai_usage_log: {
         Row: {
           cost_usd: number | null
