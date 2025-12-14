@@ -1,11 +1,10 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Header } from '@/components/Header';
 import { StatCard } from '@/components/StatCard';
 import { SessionCard } from '@/components/SessionCard';
 import { LogViewer } from '@/components/LogViewer';
 import { ScenarioViewer } from '@/components/ScenarioViewer';
 import { ProfileList } from '@/components/ProfileList';
-import { ExecutionPanel } from '@/components/ExecutionPanel';
 import { CreateProfileDialog } from '@/components/CreateProfileDialog';
 import { CreateScenarioDialog } from '@/components/CreateScenarioDialog';
 import { SessionTimeline } from '@/components/SessionTimeline';
@@ -14,10 +13,26 @@ import { DataExport } from '@/components/DataExport';
 import { AIScenarioInsights } from '@/components/AIScenarioInsights';
 import { AIFailureExplanation } from '@/components/AIFailureExplanation';
 import { AIInsightsPanel } from '@/components/AIInsightsPanel';
-import { useStats, useProfiles, useScenarios, useSessions, useSessionLogs, useRunnerHealth } from '@/hooks/useSessionData';
+import { TaskBuilder, TaskConfig } from '@/components/TaskBuilder';
+import { TaskList } from '@/components/TaskList';
+import { LiveSessionView } from '@/components/LiveSessionView';
+import { GeneratedScenarioPreview } from '@/components/GeneratedScenarioPreview';
+import { AISettingsPanel } from '@/components/AISettingsPanel';
+import { 
+  useStats, 
+  useProfiles, 
+  useScenarios, 
+  useSessions, 
+  useSessionLogs, 
+  useRunnerHealth,
+  useTasks,
+  useCreateTask,
+  useStartTask
+} from '@/hooks/useSessionData';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Button } from '@/components/ui/button';
+import { toast } from '@/hooks/use-toast';
 import { 
   Activity, 
   CheckCircle2, 
@@ -31,7 +46,10 @@ import {
   Loader2,
   BarChart3,
   AlignLeft,
-  Sparkles
+  Sparkles,
+  Target,
+  Eye,
+  Settings
 } from 'lucide-react';
 import { Database } from '@/integrations/supabase/types';
 
@@ -43,16 +61,34 @@ const Index = () => {
   const { data: scenarios = [], isLoading: scenariosLoading } = useScenarios();
   const { data: sessions = [], isLoading: sessionsLoading } = useSessions();
   const { data: runners = [] } = useRunnerHealth();
+  const { data: tasks = [] } = useTasks();
+
+  const createTask = useCreateTask();
+  const startTask = useStartTask();
 
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
   const [selectedScenario, setSelectedScenario] = useState<Scenario | null>(null);
+  const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [profileDialogOpen, setProfileDialogOpen] = useState(false);
   const [scenarioDialogOpen, setScenarioDialogOpen] = useState(false);
-  const [rightPanelView, setRightPanelView] = useState<'logs' | 'timeline' | 'metrics' | 'ai'>('logs');
+  const [rightPanelView, setRightPanelView] = useState<'live' | 'logs' | 'timeline' | 'metrics' | 'ai' | 'settings'>('live');
+  const [aiModel, setAiModel] = useState(() => localStorage.getItem('ai_selected_model') || 'anthropic/claude-sonnet-4-5');
 
   const { data: logs = [] } = useSessionLogs(selectedSessionId);
 
   const selectedSession = sessions.find(s => s.id === selectedSessionId);
+  const selectedTask = tasks.find(t => t.id === selectedTaskId);
+  const generatedScenario = selectedTask?.generated_scenario_id 
+    ? scenarios.find(s => s.id === selectedTask.generated_scenario_id)
+    : null;
+
+  // Auto-select first running session for live view
+  useEffect(() => {
+    const runningSession = sessions.find(s => s.status === 'running');
+    if (runningSession && !selectedSessionId) {
+      setSelectedSessionId(runningSession.id);
+    }
+  }, [sessions, selectedSessionId]);
 
   // Convert DB logs to component format
   const formattedLogs = logs.map(log => ({
@@ -63,6 +99,38 @@ const Index = () => {
   }));
 
   const isLoading = statsLoading || profilesLoading || scenariosLoading || sessionsLoading;
+
+  const handleCreateTask = async (taskConfig: TaskConfig) => {
+    try {
+      await createTask.mutateAsync(taskConfig);
+      toast({
+        title: 'Task Created',
+        description: 'Task and scenario generated successfully.',
+      });
+    } catch (error) {
+      toast({
+        title: 'Error',
+        description: 'Failed to create task.',
+        variant: 'destructive',
+      });
+    }
+  };
+
+  const handleStartTask = async (taskId: string) => {
+    try {
+      await startTask.mutateAsync(taskId);
+      toast({
+        title: 'Task Started',
+        description: 'Sessions are now queued for execution.',
+      });
+    } catch (error) {
+      toast({
+        title: 'Error',
+        description: 'Failed to start task.',
+        variant: 'destructive',
+      });
+    }
+  };
 
   if (isLoading && !stats) {
     return (
@@ -81,27 +149,33 @@ const Index = () => {
       
       <main className="container mx-auto px-4 py-6">
         {/* Stats Grid */}
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 mb-6">
+        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3 mb-6">
           <StatCard
-            title="Active Sessions"
+            title="Active Tasks"
+            value={stats?.activeTasks ?? 0}
+            icon={Target}
+            variant="primary"
+          />
+          <StatCard
+            title="Running"
             value={stats?.activeSessions ?? 0}
             icon={Activity}
             variant="warning"
           />
           <StatCard
-            title="Completed Today"
+            title="Completed"
             value={stats?.completedToday ?? 0}
             icon={CheckCircle2}
             variant="success"
           />
           <StatCard
-            title="Failed Today"
+            title="Failed"
             value={stats?.failedToday ?? 0}
             icon={XCircle}
             variant="error"
           />
           <StatCard
-            title="Avg Duration"
+            title="Avg Time"
             value={stats?.avgDuration ?? '0m 0s'}
             icon={Clock}
             variant="default"
@@ -110,22 +184,26 @@ const Index = () => {
             title="Profiles"
             value={stats?.totalProfiles ?? 0}
             icon={Users}
-            variant="primary"
+            variant="default"
           />
           <StatCard
             title="Scenarios"
             value={stats?.totalScenarios ?? 0}
             icon={FileCode}
-            variant="primary"
+            variant="default"
           />
         </div>
 
         {/* Main Content Grid */}
         <div className="grid lg:grid-cols-12 gap-6">
-          {/* Left Panel - Sessions & Execution */}
+          {/* Left Panel - Task Builder & Task List */}
           <div className="lg:col-span-4 space-y-4">
-            <Tabs defaultValue="sessions" className="w-full">
+            <Tabs defaultValue="tasks" className="w-full">
               <TabsList className="w-full bg-muted/50">
+                <TabsTrigger value="tasks" className="flex-1 gap-1.5">
+                  <Target className="w-3.5 h-3.5" />
+                  Tasks
+                </TabsTrigger>
                 <TabsTrigger value="sessions" className="flex-1 gap-1.5">
                   <Layers className="w-3.5 h-3.5" />
                   Sessions
@@ -136,13 +214,22 @@ const Index = () => {
                 </TabsTrigger>
               </TabsList>
               
+              <TabsContent value="tasks" className="mt-3 space-y-3">
+                <TaskList
+                  tasks={tasks}
+                  selectedTaskId={selectedTaskId || undefined}
+                  onSelectTask={setSelectedTaskId}
+                  onStartTask={handleStartTask}
+                />
+              </TabsContent>
+
               <TabsContent value="sessions" className="mt-3">
-                <ScrollArea className="h-[320px] pr-3">
+                <ScrollArea className="h-[280px] pr-3">
                   {sessions.length === 0 ? (
                     <div className="flex flex-col items-center justify-center h-[200px] text-muted-foreground">
                       <Layers className="w-8 h-8 mb-2 opacity-50" />
                       <p className="text-sm">No sessions yet</p>
-                      <p className="text-xs">Start an execution below</p>
+                      <p className="text-xs">Create a task to start</p>
                     </div>
                   ) : (
                     <div className="space-y-2">
@@ -183,9 +270,9 @@ const Index = () => {
                     Add Profile
                   </Button>
                 </div>
-                <ScrollArea className="h-[280px] pr-3">
+                <ScrollArea className="h-[240px] pr-3">
                   {profiles.length === 0 ? (
-                    <div className="flex flex-col items-center justify-center h-[200px] text-muted-foreground">
+                    <div className="flex flex-col items-center justify-center h-[180px] text-muted-foreground">
                       <Users className="w-8 h-8 mb-2 opacity-50" />
                       <p className="text-sm">No profiles yet</p>
                       <p className="text-xs">Add a profile to start</p>
@@ -206,32 +293,20 @@ const Index = () => {
               </TabsContent>
             </Tabs>
 
-            <ExecutionPanel 
-              scenarios={scenarios.map(s => ({
-                id: s.id,
-                name: s.name,
-                description: s.description || '',
-                steps: (s.steps as any[]) || [],
-                estimatedDuration: s.estimated_duration_seconds || 0,
-                lastRun: s.last_run_at || undefined
-              }))} 
-              profiles={profiles.map(p => ({
-                id: p.id,
-                name: p.name,
-                email: p.email,
-                networkConfig: '',
-                lastActive: '',
-                sessionsRun: 0
-              }))} 
+            {/* Task Builder */}
+            <TaskBuilder
+              profiles={profiles.map(p => ({ id: p.id, name: p.name }))}
+              onCreateTask={handleCreateTask}
+              isCreating={createTask.isPending}
             />
           </div>
 
-          {/* Center Panel - Scenario Detail */}
+          {/* Center Panel - Scenario Preview / Details */}
           <div className="lg:col-span-4 space-y-4">
             <div className="flex items-center justify-between mb-2">
               <div className="flex items-center gap-2 text-sm font-medium">
                 <FileCode className="w-4 h-4 text-primary" />
-                Scenario Details
+                {selectedTask ? 'Generated Scenario' : 'Scenario Details'}
               </div>
               <Button
                 size="sm"
@@ -244,16 +319,31 @@ const Index = () => {
               </Button>
             </div>
             
-            {scenarios.length === 0 ? (
+            {selectedTask && generatedScenario ? (
+              <>
+                <GeneratedScenarioPreview
+                  scenario={{
+                    id: generatedScenario.id,
+                    name: generatedScenario.name,
+                    steps: (generatedScenario.steps as any[]) || [],
+                    estimated_duration_seconds: generatedScenario.estimated_duration_seconds || 0,
+                  }}
+                />
+                <AIScenarioInsights 
+                  scenarioId={generatedScenario.id} 
+                  scenarioName={generatedScenario.name} 
+                />
+              </>
+            ) : scenarios.length === 0 ? (
               <div className="glass-panel rounded-lg flex flex-col items-center justify-center h-[300px] text-muted-foreground">
                 <FileCode className="w-8 h-8 mb-2 opacity-50" />
                 <p className="text-sm">No scenarios yet</p>
-                <p className="text-xs">Create a scenario to start</p>
+                <p className="text-xs">Create a task to auto-generate</p>
               </div>
             ) : (
               <Tabs defaultValue={scenarios[0]?.id}>
                 <TabsList className="w-full bg-muted/50 flex-wrap h-auto gap-1 p-1">
-                  {scenarios.map((s) => (
+                  {scenarios.slice(0, 6).map((s) => (
                     <TabsTrigger
                       key={s.id}
                       value={s.id}
@@ -277,7 +367,6 @@ const Index = () => {
                         lastRun: s.last_run_at || undefined
                       }} 
                     />
-                    {/* AI Scenario Insights */}
                     <AIScenarioInsights 
                       scenarioId={s.id} 
                       scenarioName={s.name} 
@@ -291,20 +380,32 @@ const Index = () => {
             <DataExport />
           </div>
 
-          {/* Right Panel - Logs/Timeline/Metrics */}
+          {/* Right Panel - Live View / Logs / Metrics / AI */}
           <div className="lg:col-span-4 space-y-4">
             <div className="flex items-center justify-between mb-2">
               <div className="flex items-center gap-2 text-sm font-medium">
+                {rightPanelView === 'live' && <Eye className="w-4 h-4 text-primary" />}
                 {rightPanelView === 'logs' && <Terminal className="w-4 h-4 text-primary" />}
                 {rightPanelView === 'timeline' && <AlignLeft className="w-4 h-4 text-primary" />}
                 {rightPanelView === 'metrics' && <BarChart3 className="w-4 h-4 text-primary" />}
                 {rightPanelView === 'ai' && <Sparkles className="w-4 h-4 text-primary" />}
+                {rightPanelView === 'settings' && <Settings className="w-4 h-4 text-primary" />}
+                {rightPanelView === 'live' && 'Live Session'}
                 {rightPanelView === 'logs' && 'Session Output'}
                 {rightPanelView === 'timeline' && 'Execution Timeline'}
                 {rightPanelView === 'metrics' && 'Metrics'}
                 {rightPanelView === 'ai' && 'AI Insights'}
+                {rightPanelView === 'settings' && 'AI Settings'}
               </div>
               <div className="flex gap-1">
+                <Button
+                  size="sm"
+                  variant={rightPanelView === 'live' ? 'default' : 'ghost'}
+                  onClick={() => setRightPanelView('live')}
+                  className="h-7 px-2"
+                >
+                  <Eye className="w-3.5 h-3.5" />
+                </Button>
                 <Button
                   size="sm"
                   variant={rightPanelView === 'logs' ? 'default' : 'ghost'}
@@ -337,9 +438,47 @@ const Index = () => {
                 >
                   <Sparkles className="w-3.5 h-3.5" />
                 </Button>
+                <Button
+                  size="sm"
+                  variant={rightPanelView === 'settings' ? 'default' : 'ghost'}
+                  onClick={() => setRightPanelView('settings')}
+                  className="h-7 px-2"
+                >
+                  <Settings className="w-3.5 h-3.5" />
+                </Button>
               </div>
             </div>
             
+            {rightPanelView === 'live' && (
+              selectedSession ? (
+                <LiveSessionView
+                  session={{
+                    id: selectedSession.id,
+                    status: selectedSession.status,
+                    progress: selectedSession.progress || 0,
+                    current_step: selectedSession.current_step || 0,
+                    total_steps: selectedSession.total_steps || 0,
+                    current_url: (selectedSession as any).current_url,
+                    last_screenshot_url: (selectedSession as any).last_screenshot_url,
+                    captcha_status: (selectedSession as any).captcha_status,
+                    captcha_detected_at: (selectedSession as any).captcha_detected_at,
+                    captcha_resolved_at: (selectedSession as any).captcha_resolved_at,
+                    profile_state: (selectedSession as any).profile_state,
+                    error_message: selectedSession.error_message,
+                    is_resumable: selectedSession.is_resumable,
+                    profiles: selectedSession.profiles,
+                    scenarios: selectedSession.scenarios,
+                  }}
+                />
+              ) : (
+                <div className="glass-panel rounded-lg flex flex-col items-center justify-center h-[300px] text-muted-foreground">
+                  <Eye className="w-8 h-8 mb-2 opacity-50" />
+                  <p className="text-sm">No session selected</p>
+                  <p className="text-xs">Select a session to view live status</p>
+                </div>
+              )
+            )}
+
             {rightPanelView === 'logs' && (
               <>
                 {selectedSession && (
@@ -351,13 +490,13 @@ const Index = () => {
                   logs={formattedLogs} 
                   maxHeight="400px"
                 />
-                {/* AI Failure Explanation for failed sessions */}
                 {selectedSession?.status === 'error' && (
                   <AIFailureExplanation
                     sessionId={selectedSession.id}
                     errorMessage={selectedSession.error_message}
                     isResumable={selectedSession.is_resumable}
                     lastSuccessfulStep={selectedSession.last_successful_step}
+                    model={aiModel}
                   />
                 )}
               </>
@@ -381,6 +520,13 @@ const Index = () => {
 
             {rightPanelView === 'ai' && (
               <AIInsightsPanel />
+            )}
+
+            {rightPanelView === 'settings' && (
+              <AISettingsPanel
+                selectedModel={aiModel}
+                onModelChange={setAiModel}
+              />
             )}
           </div>
         </div>

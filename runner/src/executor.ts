@@ -11,6 +11,7 @@ import {
   ErrorCategory,
   DEFAULT_RETRY_CONFIG 
 } from './retry';
+import { detectCaptcha, resolveCaptcha } from './captcha';
 
 export interface ExecutorConfig {
   headless: boolean;
@@ -323,6 +324,35 @@ export class SessionExecutor {
 
     const stepStart = Date.now();
 
+    // Update current URL
+    try {
+      await this.api.updateSessionUrl(session.id, page.url());
+    } catch (e) {
+      // Non-critical
+    }
+
+    // Check for captcha before executing step
+    const captchaDetection = await detectCaptcha(page);
+    if (captchaDetection.detected) {
+      log('warning', `Captcha detected: ${captchaDetection.type}`);
+      
+      // Report captcha status to API
+      await this.api.updateCaptchaStatus(session.id, 'detected');
+      
+      // Attempt to resolve
+      await this.api.updateCaptchaStatus(session.id, 'solving');
+      const resolveResult = await resolveCaptcha(page, captchaDetection, log);
+      
+      if (resolveResult.success) {
+        log('success', `Captcha resolved via ${resolveResult.method} in ${resolveResult.duration_ms}ms`);
+        await this.api.updateCaptchaStatus(session.id, 'solved');
+      } else {
+        log('error', `Captcha resolution failed: ${resolveResult.error}`);
+        await this.api.updateCaptchaStatus(session.id, 'failed');
+        throw new Error(`Captcha resolution failed: ${resolveResult.error}`);
+      }
+    }
+
     // Log step start to API
     await this.api.sendLog(
       session.id,
@@ -348,6 +378,13 @@ export class SessionExecutor {
     try {
       await handler(actionContext, step);
       const durationMs = Date.now() - stepStart;
+
+      // Update URL after step
+      try {
+        await this.api.updateSessionUrl(session.id, page.url());
+      } catch (e) {
+        // Non-critical
+      }
 
       await this.api.sendLog(
         session.id,

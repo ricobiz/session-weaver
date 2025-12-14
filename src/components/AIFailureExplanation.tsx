@@ -11,6 +11,7 @@ interface AIFailureExplanationProps {
   errorMessage?: string | null;
   isResumable?: boolean;
   lastSuccessfulStep?: number | null;
+  model?: string;
 }
 
 interface FailureExplanation {
@@ -37,6 +38,7 @@ export function AIFailureExplanation({
   errorMessage,
   isResumable,
   lastSuccessfulStep,
+  model,
 }: AIFailureExplanationProps) {
   const [explanation, setExplanation] = useState<FailureExplanation | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -49,7 +51,7 @@ export function AIFailureExplanation({
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ session_id: sessionId }),
+          body: JSON.stringify({ session_id: sessionId, model }),
         }
       );
       const result = await response.json();

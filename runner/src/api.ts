@@ -149,4 +149,22 @@ export class ApiClient {
     });
     return result !== null;
   }
+
+  // Update captcha status
+  async updateCaptchaStatus(sessionId: string, status: string): Promise<boolean> {
+    const result = await this.request('PATCH', `/sessions/${sessionId}/captcha`, { status });
+    return result !== null;
+  }
+
+  // Update current URL
+  async updateSessionUrl(sessionId: string, url: string): Promise<boolean> {
+    const result = await this.request('PATCH', `/sessions/${sessionId}/url`, { url });
+    return result !== null;
+  }
+
+  // Update profile state
+  async updateProfileState(sessionId: string, state: string): Promise<boolean> {
+    const result = await this.request('PATCH', `/sessions/${sessionId}/profile-state`, { state });
+    return result !== null;
+  }
 }
