@@ -41,9 +41,13 @@ ENV POLL_INTERVAL_MS="5000"
 ENV MAX_CONCURRENCY="3"
 ENV HEADLESS="true"
 ENV LOG_LEVEL="info"
+ENV HTTP_API_PORT="3001"
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-  CMD node -e "console.log('healthy')" || exit 1
+# Expose HTTP API port
+EXPOSE 3001
+
+# Health check via HTTP API
+HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
+  CMD curl -f http://localhost:3001/health || exit 1
 
 CMD ["node", "dist/index.js"]
