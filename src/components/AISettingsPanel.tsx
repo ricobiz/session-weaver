@@ -39,17 +39,20 @@ interface AISettingsPanelProps {
 }
 
 const RECOMMENDED_MODELS = [
-  'anthropic/claude-sonnet-4-5',
-  'openai/gpt-4o',
-  'google/gemini-2.5-flash',
+  'google/gemini-flash-1.5',
+  'google/gemini-2.0-flash-exp',
+  'deepseek/deepseek-chat',
+  'qwen/qwen-2.5-72b-instruct',
+  'anthropic/claude-3-haiku',
   'meta-llama/llama-3.1-70b-instruct',
+  'openai/gpt-4o-mini',
 ];
 
 export function AISettingsPanel({ onModelChange, selectedModel: externalSelectedModel }: AISettingsPanelProps) {
   const [models, setModels] = useState<OpenRouterModel[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
-  const [selectedModel, setSelectedModel] = useState(externalSelectedModel || 'anthropic/claude-sonnet-4-5');
+  const [selectedModel, setSelectedModel] = useState(externalSelectedModel || 'google/gemini-flash-1.5');
   const [apiKeyStatus, setApiKeyStatus] = useState<'unknown' | 'valid' | 'invalid'>('unknown');
   const [isTestingKey, setIsTestingKey] = useState(false);
 
