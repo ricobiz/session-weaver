@@ -1199,6 +1199,110 @@ Analyze this failure and provide debugging insights.`;
       });
     }
 
+    // POST /tasks/:id/pause - Pause a running task
+    if (req.method === 'POST' && path.match(/^\/tasks\/[^/]+\/pause$/)) {
+      const taskId = path.split('/')[2];
+      
+      // Update task status
+      await supabase
+        .from('tasks')
+        .update({ status: 'paused' })
+        .eq('id', taskId);
+
+      // Pause all queued/running sessions for this task
+      await supabase
+        .from('sessions')
+        .update({ status: 'paused' })
+        .eq('task_id', taskId)
+        .in('status', ['queued', 'running']);
+
+      return new Response(JSON.stringify({ success: true }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    // POST /tasks/:id/resume - Resume a paused task
+    if (req.method === 'POST' && path.match(/^\/tasks\/[^/]+\/resume$/)) {
+      const taskId = path.split('/')[2];
+      
+      // Update task status
+      await supabase
+        .from('tasks')
+        .update({ status: 'active' })
+        .eq('id', taskId);
+
+      // Resume paused sessions - put them back in queue
+      await supabase
+        .from('sessions')
+        .update({ status: 'queued' })
+        .eq('task_id', taskId)
+        .eq('status', 'paused');
+
+      return new Response(JSON.stringify({ success: true }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    // POST /tasks/:id/stop - Stop a task completely
+    if (req.method === 'POST' && path.match(/^\/tasks\/[^/]+\/stop$/)) {
+      const taskId = path.split('/')[2];
+      
+      // Update task status
+      await supabase
+        .from('tasks')
+        .update({ status: 'stopped', completed_at: new Date().toISOString() })
+        .eq('id', taskId);
+
+      // Cancel all non-completed sessions
+      await supabase
+        .from('sessions')
+        .update({ status: 'cancelled' })
+        .eq('task_id', taskId)
+        .in('status', ['queued', 'running', 'paused']);
+
+      // Remove from execution queue
+      const { data: sessions } = await supabase
+        .from('sessions')
+        .select('id')
+        .eq('task_id', taskId);
+
+      if (sessions?.length) {
+        await supabase
+          .from('execution_queue')
+          .delete()
+          .in('session_id', sessions.map(s => s.id));
+      }
+
+      return new Response(JSON.stringify({ success: true }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    // GET /tasks/:id/stats - Get task execution stats
+    if (req.method === 'GET' && path.match(/^\/tasks\/[^/]+\/stats$/)) {
+      const taskId = path.split('/')[2];
+      
+      const { data: sessions } = await supabase
+        .from('sessions')
+        .select('id, status, error_message, last_successful_step, completed_at, profile_id, profiles(name)')
+        .eq('task_id', taskId);
+
+      const stats = {
+        total: sessions?.length || 0,
+        running: sessions?.filter(s => s.status === 'running').length || 0,
+        queued: sessions?.filter(s => s.status === 'queued').length || 0,
+        completed: sessions?.filter(s => s.status === 'success').length || 0,
+        failed: sessions?.filter(s => s.status === 'error').length || 0,
+        paused: sessions?.filter(s => s.status === 'paused').length || 0,
+        cancelled: sessions?.filter(s => s.status === 'cancelled').length || 0,
+        sessions: sessions || [],
+      };
+
+      return new Response(JSON.stringify(stats), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
     return new Response(JSON.stringify({ error: 'Not found' }), {
       status: 404,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
