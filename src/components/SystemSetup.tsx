@@ -81,10 +81,20 @@ export function SystemSetup() {
   // Railway deployment state
   const [railwayStatus, setRailwayStatus] = useState<RailwayStatus | null>(null);
   const [isDeploying, setIsDeploying] = useState(false);
-  const [deployResult, setDeployResult] = useState<{ success: boolean; dashboardUrl?: string; error?: string } | null>(null);
+  const [deployResult, setDeployResult] = useState<{ 
+    success: boolean; 
+    dashboardUrl?: string; 
+    error?: string;
+    serviceId?: string;
+  } | null>(null);
   const [repoUrl, setRepoUrl] = useState('');
   const [deletingProjects, setDeletingProjects] = useState<Set<string>>(new Set());
   const [showProjects, setShowProjects] = useState(false);
+  const [deploymentStatus, setDeploymentStatus] = useState<{
+    status: string;
+    logs: string[];
+    isPolling: boolean;
+  } | null>(null);
 
   const checkRailway = async () => {
     try {
@@ -109,6 +119,81 @@ export function SystemSetup() {
     }
   };
 
+  const checkDeploymentStatus = async (serviceId: string) => {
+    try {
+      const response = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/railway-deploy`,
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ action: 'status', serviceId }),
+        }
+      );
+
+      const data = await response.json();
+      return data;
+    } catch (error) {
+      console.error('Status check error:', error);
+      return null;
+    }
+  };
+
+  const pollDeploymentStatus = async (serviceId: string) => {
+    setDeploymentStatus({ status: 'BUILDING', logs: [], isPolling: true });
+    
+    let attempts = 0;
+    const maxAttempts = 30; // 5 minutes max (10s intervals)
+    
+    const poll = async () => {
+      if (attempts >= maxAttempts) {
+        setDeploymentStatus(prev => prev ? { 
+          ...prev, 
+          status: 'TIMEOUT', 
+          isPolling: false,
+          logs: [...prev.logs, '[TIMEOUT] Deployment is taking too long. Check Railway dashboard.']
+        } : null);
+        return;
+      }
+
+      const statusData = await checkDeploymentStatus(serviceId);
+      
+      if (statusData?.latestDeployment) {
+        const { status } = statusData.latestDeployment;
+        const logs = statusData.buildLogs || [];
+        
+        setDeploymentStatus({
+          status,
+          logs,
+          isPolling: !['SUCCESS', 'FAILED', 'CRASHED', 'REMOVED'].includes(status),
+        });
+
+        if (status === 'SUCCESS') {
+          toast({
+            title: 'Deployment Successful!',
+            description: 'Runner is now online and ready.',
+          });
+          await checkRailway();
+          return;
+        } else if (['FAILED', 'CRASHED'].includes(status)) {
+          toast({
+            title: 'Deployment Failed',
+            description: logs[logs.length - 1] || 'Check logs for details.',
+            variant: 'destructive',
+          });
+          return;
+        }
+      }
+
+      attempts++;
+      setTimeout(poll, 10000); // Poll every 10 seconds
+    };
+
+    poll();
+  };
+
   const deployToRailway = async () => {
     if (!repoUrl.trim()) {
       toast({
@@ -121,6 +206,7 @@ export function SystemSetup() {
 
     setIsDeploying(true);
     setDeployResult(null);
+    setDeploymentStatus(null);
 
     try {
       const response = await fetch(
@@ -138,11 +224,13 @@ export function SystemSetup() {
       const data = await response.json();
       setDeployResult(data);
 
-      if (data.success) {
+      if (data.success && data.serviceId) {
         toast({
-          title: 'Runner Deployed!',
-          description: 'Backend is starting on Railway. It will be online in ~2 minutes.',
+          title: 'Deployment Started',
+          description: 'Tracking build status...',
         });
+        // Start polling for status
+        pollDeploymentStatus(data.serviceId);
         // Update railway status
         await checkRailway();
       } else {
@@ -484,18 +572,18 @@ export function SystemSetup() {
 
                 <Button
                   onClick={deployToRailway}
-                  disabled={isDeploying || deployResult?.success || !repoUrl.trim()}
+                  disabled={isDeploying || (deploymentStatus?.isPolling) || !repoUrl.trim()}
                   className="w-full gap-2"
                 >
                   {isDeploying ? (
                     <>
                       <Loader2 className="w-4 h-4 animate-spin" />
-                      Deploying from GitHub...
+                      Starting deployment...
                     </>
-                  ) : deployResult?.success ? (
+                  ) : deploymentStatus?.isPolling ? (
                     <>
-                      <Check className="w-4 h-4" />
-                      Deployed - Wait ~2 min
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      Building...
                     </>
                   ) : (
                     <>
@@ -514,6 +602,69 @@ export function SystemSetup() {
                   >
                     Open Railway Dashboard →
                   </a>
+                )}
+
+                {/* Deployment Status Panel */}
+                {deploymentStatus && (
+                  <div className="mt-3 space-y-2">
+                    <div className={cn(
+                      'p-3 rounded border',
+                      deploymentStatus.status === 'SUCCESS' && 'bg-green-500/10 border-green-500/30',
+                      deploymentStatus.status === 'BUILDING' && 'bg-blue-500/10 border-blue-500/30',
+                      ['FAILED', 'CRASHED'].includes(deploymentStatus.status) && 'bg-red-500/10 border-red-500/30',
+                      deploymentStatus.status === 'TIMEOUT' && 'bg-yellow-500/10 border-yellow-500/30',
+                    )}>
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="flex items-center gap-2">
+                          {deploymentStatus.isPolling && (
+                            <Loader2 className="w-3 h-3 animate-spin text-blue-500" />
+                          )}
+                          {deploymentStatus.status === 'SUCCESS' && (
+                            <Check className="w-3 h-3 text-green-500" />
+                          )}
+                          {['FAILED', 'CRASHED'].includes(deploymentStatus.status) && (
+                            <X className="w-3 h-3 text-red-500" />
+                          )}
+                          <span className="text-xs font-medium">
+                            Status: {deploymentStatus.status}
+                          </span>
+                        </div>
+                        {deployResult?.dashboardUrl && (
+                          <a
+                            href={deployResult.dashboardUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-xs text-primary hover:underline flex items-center gap-1"
+                          >
+                            Railway <ExternalLink className="w-3 h-3" />
+                          </a>
+                        )}
+                      </div>
+                      
+                      {/* Build Logs */}
+                      {deploymentStatus.logs.length > 0 && (
+                        <div className="mt-2 p-2 rounded bg-black/20 max-h-32 overflow-y-auto">
+                          <div className="text-[10px] font-mono space-y-0.5">
+                            {deploymentStatus.logs.slice(-10).map((log, i) => (
+                              <div key={i} className={cn(
+                                'text-muted-foreground',
+                                log.includes('[ERROR]') && 'text-red-400',
+                                log.includes('[WARN]') && 'text-yellow-400',
+                              )}>
+                                {log}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {deployResult?.error && !deploymentStatus && (
+                  <div className="mt-3 p-2 rounded bg-red-500/10 border border-red-500/30">
+                    <span className="text-xs text-red-500">{deployResult.error}</span>
+                  </div>
                 )}
               </div>
             ) : railwayStatus === null ? (
@@ -534,31 +685,6 @@ export function SystemSetup() {
                 <p className="text-xs text-muted-foreground">
                   Add RAILWAY_API_TOKEN in Settings → Secrets to enable auto-deploy.
                 </p>
-              </div>
-            )}
-
-            {deployResult?.success && (
-              <div className="mt-3 p-2 rounded bg-green-500/10 border border-green-500/30">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs text-green-500">Deployment started!</span>
-                  {deployResult.dashboardUrl && (
-                    <a
-                      href={deployResult.dashboardUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="flex items-center gap-1 text-xs text-primary hover:underline"
-                    >
-                      Open Railway
-                      <ExternalLink className="w-3 h-3" />
-                    </a>
-                  )}
-                </div>
-              </div>
-            )}
-
-            {deployResult?.error && (
-              <div className="mt-3 p-2 rounded bg-red-500/10 border border-red-500/30">
-                <span className="text-xs text-red-500">{deployResult.error}</span>
               </div>
             )}
           </div>
