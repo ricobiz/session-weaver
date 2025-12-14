@@ -6,7 +6,9 @@ const corsHeaders = {
 };
 
 // Runner HTTP API endpoint (set this to your runner's address)
-const RUNNER_API_URL = Deno.env.get('RUNNER_API_URL') || 'http://localhost:3001';
+const rawRunnerUrl = Deno.env.get('RUNNER_API_URL') || 'http://localhost:3001';
+const RUNNER_API_URL = rawRunnerUrl.replace(/\/$/, ''); // Remove trailing slash
+console.log('[runner-test] Using RUNNER_API_URL:', RUNNER_API_URL);
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
