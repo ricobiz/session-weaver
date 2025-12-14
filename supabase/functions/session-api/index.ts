@@ -874,20 +874,32 @@ serve(async (req) => {
         }
 
         const data = await response.json();
+        console.log('[session-api] OpenRouter key data:', JSON.stringify(data));
         
-        // OpenRouter returns data.data with label, usage, limit, etc.
+        // OpenRouter returns data.data with label, usage, limit, limit_remaining, etc.
         const keyData = data.data || {};
         
+        // OpenRouter provides:
+        // - limit: total credits purchased/allocated
+        // - usage: total credits used
+        // - limit_remaining: remaining credits (limit - usage)
+        
+        // If limit is null/undefined, it means unlimited - show remaining based on usage
+        const totalCredits = keyData.limit ?? keyData.limit_remaining ?? 0;
+        const usedCredits = keyData.usage ?? 0;
+        const remainingCredits = keyData.limit_remaining ?? (totalCredits - usedCredits);
+        
         return new Response(JSON.stringify({
-          credits: keyData.limit ?? 100, // Default if unlimited
-          credits_used: keyData.usage ?? 0,
+          credits: remainingCredits + usedCredits, // Total available (remaining + used = original limit)
+          credits_used: usedCredits,
           limit: keyData.limit,
+          limit_remaining: keyData.limit_remaining,
           is_free_tier: keyData.is_free_tier ?? false,
           rate_limit: keyData.rate_limit,
           usage: {
             prompt_tokens: 0,
             completion_tokens: 0,
-            total_cost: keyData.usage ?? 0,
+            total_cost: usedCredits,
           }
         }), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
