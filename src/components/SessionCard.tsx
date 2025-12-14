@@ -2,7 +2,8 @@ import { SessionExecution } from '@/types/session';
 import { StatusIndicator } from './StatusIndicator';
 import { Progress } from '@/components/ui/progress';
 import { Badge } from '@/components/ui/badge';
-import { Clock, User, AlertTriangle, CheckCircle2 } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Clock, User, AlertTriangle, CheckCircle2, Trash2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface SessionCardProps {
@@ -12,12 +13,14 @@ interface SessionCardProps {
   };
   isSelected?: boolean;
   onClick?: () => void;
+  onDelete?: (sessionId: string) => void;
 }
 
-export function SessionCard({ session, isSelected, onClick }: SessionCardProps) {
+export function SessionCard({ session, isSelected, onClick, onDelete }: SessionCardProps) {
   const isFailed = session.status === 'error';
   const isSuccess = session.status === 'success';
   const isComplete = isFailed || isSuccess;
+  const canDelete = session.status !== 'running';
 
   return (
     <div
@@ -35,9 +38,24 @@ export function SessionCard({ session, isSelected, onClick }: SessionCardProps) 
           <StatusIndicator status={session.status} size="lg" />
           <span className="font-medium text-sm truncate max-w-[120px]">{session.scenarioName}</span>
         </div>
-        <span className="text-[10px] text-muted-foreground font-mono">
-          {session.id.slice(-6)}
-        </span>
+        <div className="flex items-center gap-1">
+          <span className="text-[10px] text-muted-foreground font-mono">
+            {session.id.slice(-6)}
+          </span>
+          {onDelete && canDelete && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-5 w-5 p-0 text-muted-foreground hover:text-destructive"
+              onClick={(e) => {
+                e.stopPropagation();
+                onDelete(session.id);
+              }}
+            >
+              <Trash2 className="w-3 h-3" />
+            </Button>
+          )}
+        </div>
       </div>
 
       <div className="space-y-2">
