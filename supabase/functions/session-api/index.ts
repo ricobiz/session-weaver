@@ -982,12 +982,12 @@ serve(async (req) => {
       return response.json();
     }
 
-    // GET /ai/balance - Get OpenRouter account balance
+    // GET /ai/balance - Get OpenRouter account balance (using /credits endpoint)
     if (req.method === 'GET' && path === '/ai/balance') {
       try {
         if (!OPENROUTER_API_KEY) {
           return new Response(JSON.stringify({ 
-            credits: 0, 
+            balance: 0, 
             credits_used: 0, 
             error: 'API key not configured' 
           }), {
@@ -995,59 +995,49 @@ serve(async (req) => {
           });
         }
 
-        // Fetch credits info from OpenRouter
-        const response = await fetch('https://openrouter.ai/api/v1/auth/key', {
+        // Use /credits endpoint for actual balance (pay-as-you-go accounts)
+        const creditsResponse = await fetch('https://openrouter.ai/api/v1/credits', {
           headers: {
             'Authorization': `Bearer ${OPENROUTER_API_KEY}`,
           },
         });
 
-        if (!response.ok) {
+        if (!creditsResponse.ok) {
+          console.error('[session-api] Credits API error:', creditsResponse.status);
           return new Response(JSON.stringify({ 
-            credits: 0, 
+            balance: 0, 
             credits_used: 0, 
-            error: 'Failed to fetch balance' 
+            error: 'Failed to fetch credits' 
           }), {
             status: 500,
             headers: { ...corsHeaders, 'Content-Type': 'application/json' },
           });
         }
 
-        const data = await response.json();
-        console.log('[session-api] OpenRouter key data:', JSON.stringify(data));
+        const creditsData = await creditsResponse.json();
+        console.log('[session-api] OpenRouter credits data:', JSON.stringify(creditsData));
         
-        // OpenRouter returns data.data with label, usage, limit, limit_remaining, etc.
-        const keyData = data.data || {};
-        
-        // OpenRouter provides:
-        // - limit: total credits purchased/allocated
-        // - usage: total credits used
-        // - limit_remaining: remaining credits (limit - usage)
-        
-        // If limit is null/undefined, it means unlimited - show remaining based on usage
-        const totalCredits = keyData.limit ?? keyData.limit_remaining ?? 0;
-        const usedCredits = keyData.usage ?? 0;
-        const remainingCredits = keyData.limit_remaining ?? (totalCredits - usedCredits);
+        // OpenRouter /credits returns:
+        // - data.total_credits: total credits purchased
+        // - data.total_usage: total credits used
+        // For pay-as-you-go: balance = total_credits - total_usage
+        const credits = creditsData.data || creditsData;
+        const totalCredits = credits.total_credits ?? 0;
+        const totalUsage = credits.total_usage ?? 0;
+        const balance = totalCredits - totalUsage;
         
         return new Response(JSON.stringify({
-          credits: remainingCredits + usedCredits, // Total available (remaining + used = original limit)
-          credits_used: usedCredits,
-          limit: keyData.limit,
-          limit_remaining: keyData.limit_remaining,
-          is_free_tier: keyData.is_free_tier ?? false,
-          rate_limit: keyData.rate_limit,
-          usage: {
-            prompt_tokens: 0,
-            completion_tokens: 0,
-            total_cost: usedCredits,
-          }
+          balance: balance,
+          total_credits: totalCredits,
+          credits_used: totalUsage,
+          is_free_tier: credits.is_free_tier ?? false,
         }), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
       } catch (error) {
         console.error('[session-api] Balance fetch error:', error);
         return new Response(JSON.stringify({ 
-          credits: 0, 
+          balance: 0, 
           credits_used: 0, 
           error: 'Failed to fetch balance' 
         }), {

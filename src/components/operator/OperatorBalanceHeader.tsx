@@ -5,9 +5,10 @@ import { Wallet, RefreshCw, AlertTriangle } from 'lucide-react';
 import { ModelSelector } from './ModelSelector';
 
 interface BalanceData {
-  credits: number;
+  balance: number;
+  total_credits?: number;
   credits_used: number;
-  limit_remaining?: number;
+  is_free_tier?: boolean;
 }
 
 interface OperatorBalanceHeaderProps {
@@ -43,8 +44,7 @@ export function OperatorBalanceHeader({ selectedModel, onModelChange }: Operator
     return () => clearInterval(interval);
   }, [fetchBalance]);
 
-  const remaining = balance?.limit_remaining ?? 
-    (balance ? balance.credits - (balance.credits_used || 0) : 0);
+  const remaining = balance?.balance ?? 0;
   const isLow = remaining < 2;
 
   return (
