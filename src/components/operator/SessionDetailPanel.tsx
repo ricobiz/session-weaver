@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -16,6 +16,8 @@ import {
   Clock,
   Loader2,
   Server,
+  RefreshCw,
+  ImageOff,
 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from '@/hooks/use-toast';
@@ -71,7 +73,9 @@ const ACTION_LABELS: Record<string, string> = {
 export function SessionDetailPanel({ session, onClose, onRefresh }: SessionDetailPanelProps) {
   const [isCapturing, setIsCapturing] = useState(false);
   const [screenshot, setScreenshot] = useState<string | null>(session.last_screenshot_url || null);
+  const [screenshotTime, setScreenshotTime] = useState<string | null>(null);
   const [isActioning, setIsActioning] = useState(false);
+  const [pollingForScreenshot, setPollingForScreenshot] = useState(false);
 
   const statusInfo = STATUS_DISPLAY[session.status as keyof typeof STATUS_DISPLAY];
   const isRunning = session.status === 'running';
@@ -79,21 +83,80 @@ export function SessionDetailPanel({ session, onClose, onRefresh }: SessionDetai
   const hasCaptcha = session.captcha_status && 
     !['solved', null].includes(session.captcha_status);
 
+  // Update screenshot when session changes
+  useEffect(() => {
+    if (session.last_screenshot_url && session.last_screenshot_url !== screenshot) {
+      setScreenshot(session.last_screenshot_url);
+    }
+  }, [session.last_screenshot_url]);
+
+  // Poll for screenshot when requested
+  useEffect(() => {
+    if (!pollingForScreenshot) return;
+
+    const pollInterval = setInterval(async () => {
+      try {
+        const response = await fetch(
+          `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/session-api/sessions/${session.id}/screenshot`,
+          { method: 'GET', headers: { 'Content-Type': 'application/json' } }
+        );
+
+        if (response.ok) {
+          const data = await response.json();
+          if (data.screenshot_url && data.screenshot_url !== screenshot) {
+            setScreenshot(data.screenshot_url);
+            setScreenshotTime(data.captured_at ? new Date(data.captured_at).toLocaleTimeString() : null);
+            setPollingForScreenshot(false);
+            setIsCapturing(false);
+          }
+        }
+      } catch (err) {
+        console.error('Screenshot poll error:', err);
+      }
+    }, 1500);
+
+    // Stop polling after 10 seconds
+    const timeout = setTimeout(() => {
+      setPollingForScreenshot(false);
+      setIsCapturing(false);
+    }, 10000);
+
+    return () => {
+      clearInterval(pollInterval);
+      clearTimeout(timeout);
+    };
+  }, [pollingForScreenshot, session.id, screenshot]);
+
   const handleScreenshot = async () => {
     setIsCapturing(true);
     try {
-      // Request screenshot from runner via edge function
+      // Request screenshot capture from runner via edge function
       const response = await fetch(
         `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/session-api/sessions/${session.id}/screenshot`,
         { method: 'POST', headers: { 'Content-Type': 'application/json' } }
       );
 
-      if (!response.ok) throw new Error('Failed to capture screenshot');
+      if (!response.ok) throw new Error('Failed to request screenshot');
 
       const data = await response.json();
-      setScreenshot(data.screenshot_url);
-      toast({ title: 'Screenshot captured' });
+      
+      if (data.status === 'requested') {
+        // Start polling for the new screenshot
+        setPollingForScreenshot(true);
+        toast({ title: 'Screenshot requested', description: 'Waiting for capture...' });
+      } else if (data.screenshot_url) {
+        // Use cached screenshot
+        setScreenshot(data.screenshot_url);
+        setIsCapturing(false);
+        toast({ title: 'Showing last known screenshot' });
+      } else {
+        setIsCapturing(false);
+        toast({ title: 'No screenshot available', variant: 'destructive' });
+      }
     } catch (error) {
+      console.error('Screenshot request failed:', error);
+      setIsCapturing(false);
+      
       // Fallback: use last known screenshot
       if (session.last_screenshot_url) {
         setScreenshot(session.last_screenshot_url);
@@ -101,8 +164,6 @@ export function SessionDetailPanel({ session, onClose, onRefresh }: SessionDetai
       } else {
         toast({ title: 'Screenshot unavailable', variant: 'destructive' });
       }
-    } finally {
-      setIsCapturing(false);
     }
   };
 
@@ -217,15 +278,40 @@ export function SessionDetailPanel({ session, onClose, onRefresh }: SessionDetai
         )}
 
         {/* Screenshot */}
-        {screenshot && (
-          <div className="rounded border border-border overflow-hidden aspect-video bg-muted">
-            <img 
-              src={screenshot} 
-              alt="Session screenshot" 
-              className="w-full h-full object-contain"
-            />
+        <div className="space-y-1.5">
+          <div className="flex items-center justify-between text-xs text-muted-foreground">
+            <span className="flex items-center gap-1.5">
+              <Camera className="w-3 h-3" />
+              Screenshot
+            </span>
+            {screenshotTime && (
+              <span className="font-mono text-[10px]">{screenshotTime}</span>
+            )}
           </div>
-        )}
+          <div className="rounded border border-border overflow-hidden aspect-video bg-muted relative">
+            {screenshot ? (
+              <img 
+                src={screenshot} 
+                alt="Session screenshot" 
+                className="w-full h-full object-contain"
+              />
+            ) : (
+              <div className="absolute inset-0 flex flex-col items-center justify-center text-muted-foreground">
+                <ImageOff className="w-8 h-8 mb-2 opacity-50" />
+                <span className="text-xs">No screenshot available</span>
+                <span className="text-[10px]">Click button below to capture</span>
+              </div>
+            )}
+            {(isCapturing || pollingForScreenshot) && (
+              <div className="absolute inset-0 bg-background/80 flex items-center justify-center">
+                <div className="text-center">
+                  <RefreshCw className="w-6 h-6 animate-spin mx-auto mb-2 text-primary" />
+                  <span className="text-xs text-muted-foreground">Capturing...</span>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
 
         {/* Action Buttons */}
         <div className="flex gap-2">

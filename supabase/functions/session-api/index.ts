@@ -806,6 +806,146 @@ serve(async (req) => {
     }
 
     // ============================================
+    // SCREENSHOT ENDPOINTS - Visual Observability
+    // ============================================
+
+    // POST /sessions/:id/screenshot - Request screenshot capture
+    // This sets a flag that the runner will pick up and respond to
+    if (req.method === 'POST' && path.match(/^\/sessions\/[^/]+\/screenshot$/)) {
+      const sessionId = path.split('/')[2];
+      
+      // Check if session exists and is active
+      const { data: session, error: sessionError } = await supabase
+        .from('sessions')
+        .select('id, status, runner_id, last_screenshot_url')
+        .eq('id', sessionId)
+        .single();
+
+      if (sessionError || !session) {
+        return new Response(JSON.stringify({ error: 'Session not found' }), {
+          status: 404,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      // If session is running, set a screenshot request flag in metadata
+      if (session.status === 'running' && session.runner_id) {
+        // Store screenshot request in session metadata
+        await supabase
+          .from('sessions')
+          .update({ 
+            metadata: {
+              screenshot_requested: true,
+              screenshot_requested_at: new Date().toISOString(),
+            }
+          })
+          .eq('id', sessionId);
+
+        console.log(`[session-api] Screenshot requested for session ${sessionId}`);
+
+        // Return the last known screenshot while waiting for new one
+        return new Response(JSON.stringify({ 
+          status: 'requested',
+          message: 'Screenshot capture requested from runner',
+          screenshot_url: session.last_screenshot_url,
+        }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      // If session is not running, return last known screenshot
+      return new Response(JSON.stringify({ 
+        status: 'cached',
+        message: 'Session not running, showing last known screenshot',
+        screenshot_url: session.last_screenshot_url,
+      }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    // PUT /sessions/:id/screenshot - Upload screenshot from runner
+    if (req.method === 'PUT' && path.match(/^\/sessions\/[^/]+\/screenshot$/)) {
+      const sessionId = path.split('/')[2];
+      const body = await req.json();
+      
+      // Body should contain base64 screenshot or URL
+      const screenshotUrl = body.screenshot_url;
+      const screenshotBase64 = body.screenshot_base64;
+      
+      let finalUrl = screenshotUrl;
+      
+      // If base64 is provided, we could store it or convert to URL
+      // For now, we expect the runner to provide a URL (could be data: URL)
+      if (screenshotBase64 && !screenshotUrl) {
+        // Store as data URL for simplicity
+        finalUrl = `data:image/png;base64,${screenshotBase64}`;
+      }
+
+      if (!finalUrl) {
+        return new Response(JSON.stringify({ error: 'No screenshot provided' }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      // Update session with screenshot URL and clear request flag
+      const { error } = await supabase
+        .from('sessions')
+        .update({ 
+          last_screenshot_url: finalUrl,
+          metadata: {
+            screenshot_requested: false,
+            screenshot_captured_at: new Date().toISOString(),
+            current_action: body.current_action,
+          }
+        })
+        .eq('id', sessionId);
+
+      if (error) {
+        console.error('[session-api] Screenshot upload error:', error);
+        return new Response(JSON.stringify({ error: 'Failed to save screenshot' }), {
+          status: 500,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      console.log(`[session-api] Screenshot uploaded for session ${sessionId}`);
+
+      return new Response(JSON.stringify({ success: true }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    // GET /sessions/:id/screenshot - Get current screenshot
+    if (req.method === 'GET' && path.match(/^\/sessions\/[^/]+\/screenshot$/)) {
+      const sessionId = path.split('/')[2];
+      
+      const { data: session, error } = await supabase
+        .from('sessions')
+        .select('last_screenshot_url, metadata, status')
+        .eq('id', sessionId)
+        .single();
+
+      if (error || !session) {
+        return new Response(JSON.stringify({ error: 'Session not found' }), {
+          status: 404,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      const metadata = session.metadata as any || {};
+
+      return new Response(JSON.stringify({
+        screenshot_url: session.last_screenshot_url,
+        captured_at: metadata.screenshot_captured_at,
+        current_action: metadata.current_action,
+        status: session.status,
+      }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    // ============================================
     // AI ENDPOINTS - OpenRouter Integration
     // ============================================
 
