@@ -160,18 +160,23 @@ Deno.serve(async (req) => {
       
       console.log('Starting Railway deployment from GitHub:', repoUrl);
 
-      // Step 0: Get user info and existing projects
+      // Step 0: Get user info and find workspace/projects
+      // First, get me info and projects list
       const meData = await railwayQuery(RAILWAY_API_TOKEN, `
         query {
           me {
             id
+            name
           }
           projects {
             edges {
               node {
                 id
                 name
-                teamId
+                team {
+                  id
+                  name
+                }
               }
             }
           }
@@ -179,23 +184,23 @@ Deno.serve(async (req) => {
       `);
 
       const existingProjects = meData.projects?.edges || [];
-      let workspaceId: string | null = null;
+      const userId = meData.me?.id;
+      console.log('Found', existingProjects.length, 'existing projects, userId:', userId);
       
+      // Try to find workspace ID from existing projects' team, or use user ID for personal
+      let workspaceId: string | null = null;
       for (const proj of existingProjects) {
-        if (proj.node.teamId) {
-          workspaceId = proj.node.teamId;
-          console.log('Using teamId from existing project:', workspaceId);
+        if (proj.node.team?.id) {
+          workspaceId = proj.node.team.id;
+          console.log('Found workspace from existing project:', proj.node.team.name, workspaceId);
           break;
         }
       }
       
-      if (!workspaceId) {
-        workspaceId = meData.me?.id;
-        console.log('Using user ID as workspace:', workspaceId);
-      }
-
-      if (!workspaceId) {
-        throw new Error('Could not determine workspace ID');
+      // For personal accounts, use user ID as workspaceId
+      if (!workspaceId && userId) {
+        workspaceId = userId;
+        console.log('Using user ID as workspace for personal account:', workspaceId);
       }
 
       // Step 1: Find existing project - DO NOT create new ones
@@ -217,6 +222,10 @@ Deno.serve(async (req) => {
         console.log('Using first available project:', existingProjects[0].node.name, projectId);
       } else {
         // Only create if absolutely no projects exist
+        if (!workspaceId) {
+          throw new Error('Cannot determine workspace ID. Please ensure you have a Railway account.');
+        }
+        
         const createResult = await railwayQuery(RAILWAY_API_TOKEN, `
           mutation($input: ProjectCreateInput!) {
             projectCreate(input: $input) {
@@ -226,14 +235,15 @@ Deno.serve(async (req) => {
           }
         `, {
           input: {
-            name: 'Session-Weaver-Runner',
-            description: 'Playwright automation runner deployed from GitHub',
+            name: 'session-weaver-runner',
+            description: 'Playwright automation runner',
+            isPublic: false,
             teamId: workspaceId,
           }
         });
 
         projectId = createResult.projectCreate.id;
-        console.log('Created new project (no existing projects found):', projectId);
+        console.log('Created new project:', projectId);
       }
 
       // Step 2: Get environment
