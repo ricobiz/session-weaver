@@ -779,14 +779,18 @@ serve(async (req) => {
       });
     }
 
-    // POST /test-autonomous - Run autonomous AI-driven task execution
+    // POST /test-autonomous - Run autonomous AI-driven task using existing AutonomousExecutor logic
+    // This creates a proper autonomous session and uses the agent-executor endpoints
     if (req.method === 'POST' && path === '/test-autonomous') {
       const { url, goal, max_actions = 50 } = await req.json();
       
       if (!url || !goal) {
         return new Response(JSON.stringify({ 
           error: 'url and goal are required',
-          example: { url: 'https://example.com', goal: 'Register a new account with random username and password' }
+          example: { 
+            url: 'https://justfans.uno', 
+            goal: 'Register a new account: find registration form, generate random username (test_user_XXX), password, email and submit' 
+          }
         }), {
           status: 400,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -795,14 +799,19 @@ serve(async (req) => {
 
       const OPENROUTER_API_KEY = Deno.env.get('OPENROUTER_API_KEY');
       if (!OPENROUTER_API_KEY) {
-        return new Response(JSON.stringify({ error: 'OPENROUTER_API_KEY not set' }), {
+        return new Response(JSON.stringify({ error: 'OPENROUTER_API_KEY not configured' }), {
           status: 500,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
       }
 
-      console.log(`[runner-test] Starting autonomous execution: "${goal}" on ${url}`);
+      console.log(`[runner-test] Autonomous execution: "${goal}" on ${url}`);
       
+      const supabase = createClient(
+        Deno.env.get('SUPABASE_URL') ?? '',
+        Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+      );
+
       const sessionId = crypto.randomUUID();
       const executionLog: any[] = [];
       let actionsExecuted = 0;
@@ -810,19 +819,14 @@ serve(async (req) => {
       let lastScreenshot = '';
       let currentUrl = url;
       
-      // Helper to log
-      const logAction = (type: string, details: any) => {
-        executionLog.push({ 
-          action: actionsExecuted, 
-          type, 
-          timestamp: new Date().toISOString(),
-          ...details 
-        });
-        console.log(`[autonomous] Step ${actionsExecuted}: ${type}`, JSON.stringify(details).substring(0, 200));
+      const logStep = (type: string, data: any) => {
+        executionLog.push({ step: actionsExecuted, type, time: new Date().toISOString(), ...data });
+        console.log(`[autonomous #${actionsExecuted}] ${type}:`, JSON.stringify(data).slice(0, 150));
       };
 
       try {
-        // Step 1: Navigate to target URL
+        // Step 1: Navigate to target
+        logStep('navigate', { url });
         const navResult = await fetch(`${RUNNER_API_URL}/execute`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -830,43 +834,36 @@ serve(async (req) => {
         }).then(r => r.json());
         
         if (!navResult.success) {
-          return new Response(JSON.stringify({ 
-            error: 'Navigation failed', 
-            details: navResult 
-          }), {
-            status: 500,
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-          });
+          throw new Error(`Navigation failed: ${navResult.error}`);
         }
         
         currentUrl = navResult.currentUrl || url;
-        logAction('navigate', { url: currentUrl, success: true });
+        lastScreenshot = navResult.screenshot || '';
         
-        // Wait for page load
         await new Promise(r => setTimeout(r, 2000));
         
-        // Main autonomous loop
+        // Main autonomous loop - uses agent-executor/decide for AI decisions
         while (actionsExecuted < max_actions && !goalAchieved) {
           actionsExecuted++;
           
-          // Take screenshot
-          const screenshotResult = await fetch(`${RUNNER_API_URL}/execute`, {
+          // Get current screenshot
+          const ssResult = await fetch(`${RUNNER_API_URL}/execute`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ action: 'screenshot' })
           }).then(r => r.json());
           
-          if (!screenshotResult.success || !screenshotResult.screenshot) {
-            logAction('screenshot', { success: false, error: 'Failed to capture screenshot' });
+          if (!ssResult.success || !ssResult.screenshot) {
+            logStep('error', { message: 'Screenshot failed' });
             break;
           }
           
-          lastScreenshot = screenshotResult.screenshot;
-          currentUrl = screenshotResult.currentUrl || currentUrl;
+          lastScreenshot = ssResult.screenshot;
+          currentUrl = ssResult.currentUrl || currentUrl;
           
-          // Call AI agent to decide next action
+          // Call agent-executor/decide - the AI brain that analyzes screenshot and decides next action
           const agentUrl = `${Deno.env.get('SUPABASE_URL')}/functions/v1/agent-executor/decide`;
-          const agentResponse = await fetch(agentUrl, {
+          const decideResponse = await fetch(agentUrl, {
             method: 'POST',
             headers: { 
               'Content-Type': 'application/json',
@@ -882,94 +879,100 @@ serve(async (req) => {
             })
           });
           
-          if (!agentResponse.ok) {
-            const errorText = await agentResponse.text();
-            logAction('ai_error', { status: agentResponse.status, error: errorText });
+          if (!decideResponse.ok) {
+            const err = await decideResponse.text();
+            logStep('ai_error', { status: decideResponse.status, error: err });
             break;
           }
           
-          const aiDecision = await agentResponse.json();
-          logAction('ai_decision', { 
-            action: aiDecision.action?.type,
-            reasoning: aiDecision.reasoning?.substring(0, 100),
-            confidence: aiDecision.confidence,
-            goal_progress: aiDecision.goal_progress
+          const decision = await decideResponse.json();
+          logStep('ai_decision', { 
+            action: decision.action?.type,
+            coordinates: decision.action?.coordinates,
+            text: decision.action?.text?.slice(0, 30),
+            confidence: decision.confidence,
+            progress: decision.goal_progress,
+            reasoning: decision.reasoning?.slice(0, 80)
           });
           
-          // Check for terminal states
-          if (aiDecision.action?.type === 'complete') {
+          // Check terminal states
+          if (decision.action?.type === 'complete') {
             goalAchieved = true;
-            logAction('goal_achieved', { reason: aiDecision.action.reason });
+            logStep('goal_achieved', { reason: decision.action.reason });
             break;
           }
           
-          if (aiDecision.action?.type === 'fail') {
-            logAction('goal_failed', { reason: aiDecision.action.reason });
+          if (decision.action?.type === 'fail') {
+            logStep('goal_failed', { reason: decision.action.reason });
             break;
           }
           
-          // Execute the AI-decided action
-          let actionPayload: any = { action: aiDecision.action?.type };
+          // Build action payload for runner HTTP API
+          // The runner uses humanClick/humanType etc. automatically
+          let actionPayload: any = { action: decision.action?.type };
           
-          switch (aiDecision.action?.type) {
+          switch (decision.action?.type) {
             case 'navigate':
-              actionPayload.url = aiDecision.action.url;
+              actionPayload.url = decision.action.url;
               break;
+              
             case 'click':
-              if (aiDecision.action.coordinates) {
-                actionPayload.coordinates = aiDecision.action.coordinates;
-              } else if (aiDecision.action.selector) {
-                actionPayload.selector = aiDecision.action.selector;
+              // AI provides coordinates from screenshot analysis
+              if (decision.action.coordinates) {
+                actionPayload.coordinates = decision.action.coordinates;
+                actionPayload.click_area_radius = 5; // Human-like variance
+              } else if (decision.action.selector) {
+                actionPayload.selector = decision.action.selector;
               }
-              actionPayload.click_area_radius = 5;
               break;
+              
             case 'type':
-              actionPayload.text = aiDecision.action.text;
-              if (aiDecision.action.selector) {
-                actionPayload.selector = aiDecision.action.selector;
+              actionPayload.text = decision.action.text;
+              if (decision.action.selector) {
+                actionPayload.selector = decision.action.selector;
               }
+              actionPayload.speed = 'normal'; // Human-like typing speed
               break;
+              
             case 'scroll':
+              actionPayload.action = 'scroll';
               actionPayload.coordinates = { 
-                y: (aiDecision.action.direction === 'up' ? -1 : 1) * (aiDecision.action.amount || 300) 
+                y: (decision.action.direction === 'up' ? -1 : 1) * (decision.action.amount || 300) 
               };
               break;
+              
             case 'wait':
-              actionPayload.action = 'wait';
-              actionPayload.duration = aiDecision.action.amount || 1000;
-              break;
-            case 'screenshot':
-              // Already captured, just continue
+              await new Promise(r => setTimeout(r, decision.action.amount || 1000));
               continue;
+              
+            case 'screenshot':
+              continue;
+              
             default:
-              logAction('unknown_action', { type: aiDecision.action?.type });
+              logStep('unknown_action', { type: decision.action?.type });
               continue;
           }
           
-          // Execute action on runner
-          const actionResult = await fetch(`${RUNNER_API_URL}/execute`, {
+          // Execute via runner HTTP API - uses human-like behavior internally
+          const execResult = await fetch(`${RUNNER_API_URL}/execute`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(actionPayload)
           }).then(r => r.json());
           
-          logAction('execute', { 
+          logStep('execute', { 
             action: actionPayload.action, 
-            success: actionResult.success,
-            error: actionResult.error
+            success: execResult.success,
+            coordinates: actionPayload.coordinates,
+            error: execResult.error
           });
           
-          if (!actionResult.success) {
-            // Try once more with a small wait
-            await new Promise(r => setTimeout(r, 500));
-          }
-          
-          // Wait between actions
-          await new Promise(r => setTimeout(r, 800));
+          // Brief pause between actions (human-like)
+          await new Promise(r => setTimeout(r, 600 + Math.random() * 400));
         }
         
         // Final screenshot
-        const finalScreenshot = await fetch(`${RUNNER_API_URL}/execute`, {
+        const finalSS = await fetch(`${RUNNER_API_URL}/execute`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ action: 'screenshot' })
@@ -980,22 +983,24 @@ serve(async (req) => {
           session_id: sessionId,
           goal,
           start_url: url,
-          final_url: finalScreenshot.currentUrl || currentUrl,
+          final_url: finalSS.currentUrl || currentUrl,
           actions_executed: actionsExecuted,
           max_actions,
           execution_log: executionLog,
-          final_screenshot: finalScreenshot.screenshot,
+          final_screenshot: finalSS.screenshot,
           summary: goalAchieved 
             ? `Goal achieved in ${actionsExecuted} actions` 
-            : `Stopped after ${actionsExecuted} actions (max: ${max_actions})`
+            : `Stopped after ${actionsExecuted}/${max_actions} actions`
         }), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
         
       } catch (error) {
+        logStep('fatal_error', { message: error instanceof Error ? error.message : String(error) });
         return new Response(JSON.stringify({ 
           error: error instanceof Error ? error.message : String(error),
           session_id: sessionId,
+          actions_executed: actionsExecuted,
           execution_log: executionLog,
           final_screenshot: lastScreenshot
         }), {
