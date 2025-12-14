@@ -1,8 +1,9 @@
 import { ActionHandler } from '../types';
+import { humanType, humanClick, randomDelay } from '../stealth/human-behavior';
 
 /**
- * Comment action
- * Attempts to post a comment/feedback
+ * Comment action with human-like typing
+ * Attempts to post a comment/feedback with natural behavior
  * 
  * Note: This is a generic implementation. Site-specific versions
  * should override with actual comment input selectors.
@@ -27,7 +28,17 @@ export const commentAction: ActionHandler = async (context, step) => {
     });
 
     if (input) {
-      await typeWithHumanDelay(page, input, text);
+      // Click on input with human-like behavior
+      const box = await input.boundingBox();
+      if (box) {
+        await humanClick(page, box.x + box.width / 2, box.y + box.height / 2);
+      } else {
+        await input.click();
+      }
+      await randomDelay(200, 400);
+      
+      // Type with human-like delays
+      await humanType(page, text);
       await submitComment(page, log);
       log('success', 'Comment posted');
       return;
@@ -51,11 +62,17 @@ export const commentAction: ActionHandler = async (context, step) => {
     try {
       const input = await page.$(inputSelector);
       if (input) {
-        // Focus the input
-        await input.click();
-        await new Promise(resolve => setTimeout(resolve, 300));
+        // Focus the input with human-like click
+        const box = await input.boundingBox();
+        if (box) {
+          await humanClick(page, box.x + box.width / 2, box.y + box.height / 2);
+        } else {
+          await input.click();
+        }
+        await randomDelay(200, 400);
 
-        await typeWithHumanDelay(page, input, text);
+        // Type with human-like delays
+        await humanType(page, text);
         await submitComment(page, log);
         log('success', `Comment posted via: ${inputSelector}`);
         return;
@@ -68,19 +85,11 @@ export const commentAction: ActionHandler = async (context, step) => {
   log('warning', 'No comment input found');
 };
 
-// Helper: Type with human-like delays
-async function typeWithHumanDelay(
-  page: any,
-  element: any,
-  text: string
-): Promise<void> {
-  for (const char of text) {
-    await element.type(char, { delay: 50 + Math.random() * 100 });
-  }
-}
-
-// Helper: Submit the comment
+// Helper: Submit the comment with human-like behavior
 async function submitComment(page: any, log: any): Promise<void> {
+  // Small delay before submitting (human hesitation)
+  await randomDelay(300, 600);
+  
   // Try common submit patterns
   const submitSelectors = [
     '[data-testid*="submit"]',
@@ -98,7 +107,12 @@ async function submitComment(page: any, log: any): Promise<void> {
     try {
       const button = await page.$(submitSelector);
       if (button) {
-        await button.click();
+        const box = await button.boundingBox();
+        if (box) {
+          await humanClick(page, box.x + box.width / 2, box.y + box.height / 2);
+        } else {
+          await button.click();
+        }
         await page.waitForLoadState('networkidle', { timeout: 5000 }).catch(() => {});
         return;
       }

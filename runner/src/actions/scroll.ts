@@ -1,8 +1,9 @@
 import { ActionHandler } from '../types';
+import { humanScroll, randomDelay, humanWait } from '../stealth/human-behavior';
 
 /**
- * Scroll action
- * Scrolls the page, optionally with randomization
+ * Scroll action with human-like behavior
+ * Scrolls the page with natural timing and pauses
  */
 export const scrollAction: ActionHandler = async (context, step) => {
   const { page, log } = context;
@@ -11,25 +12,32 @@ export const scrollAction: ActionHandler = async (context, step) => {
   log('info', `Scrolling page (randomized: ${randomized})`);
 
   if (randomized) {
-    // Random scroll behavior - multiple small scrolls
+    // Human-like random scroll behavior
     const scrollCount = 3 + Math.floor(Math.random() * 4); // 3-6 scrolls
     
     for (let i = 0; i < scrollCount; i++) {
       const scrollAmount = 200 + Math.floor(Math.random() * 400); // 200-600px
-      const delay = 500 + Math.floor(Math.random() * 1000); // 500-1500ms
       
-      await page.evaluate((amount) => {
-        window.scrollBy({ top: amount, behavior: 'smooth' });
-      }, scrollAmount);
+      // Use human-like scrolling
+      await humanScroll(page, 'down', scrollAmount);
       
-      await new Promise(resolve => setTimeout(resolve, delay));
+      // Variable pause between scrolls (reading simulation)
+      const pauseTime = 500 + Math.floor(Math.random() * 1500);
+      await humanWait(pauseTime);
+      
+      // Occasionally scroll up a bit (human behavior - re-reading)
+      if (Math.random() < 0.15) {
+        const scrollBack = 50 + Math.floor(Math.random() * 100);
+        await humanScroll(page, 'up', scrollBack);
+        await randomDelay(300, 600);
+      }
     }
   } else {
-    // Simple scroll to bottom
+    // Simple scroll to bottom with smooth behavior
     await page.evaluate(() => {
       window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
     });
-    await new Promise(resolve => setTimeout(resolve, 1000));
+    await humanWait(1000);
   }
 
   log('success', 'Scroll completed');
