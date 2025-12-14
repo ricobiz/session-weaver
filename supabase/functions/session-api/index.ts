@@ -99,9 +99,9 @@ serve(async (req) => {
         .single();
 
       if (claimError || !job) {
-        return new Response(JSON.stringify({ message: 'No jobs available' }), {
+        return new Response(null, {
           status: 204,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          headers: corsHeaders,
         });
       }
 
