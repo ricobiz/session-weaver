@@ -23,6 +23,7 @@ import { OpenRouterBalance } from '@/components/OpenRouterBalance';
 import { RunnerStatus } from '@/components/RunnerStatus';
 import { SystemSetup } from '@/components/SystemSetup';
 import { Button } from '@/components/ui/button';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import {
   useStats, 
   useProfiles, 
@@ -95,6 +96,7 @@ const Index = () => {
   const [scenarioDialogOpen, setScenarioDialogOpen] = useState(false);
   const [rightPanelView, setRightPanelView] = useState<'live' | 'logs' | 'timeline' | 'metrics' | 'ai' | 'settings' | 'setup'>('setup');
   const [aiModel, setAiModel] = useState(() => localStorage.getItem('ai_selected_model') || 'anthropic/claude-sonnet-4-5');
+  const [showSetupModal, setShowSetupModal] = useState(false);
 
   const { data: logs = [] } = useSessionLogs(selectedSessionId);
 
@@ -242,7 +244,7 @@ const Index = () => {
               <Button 
                 variant="default" 
                 size="sm"
-                onClick={() => setRightPanelView('setup')}
+                onClick={() => setShowSetupModal(true)}
                 className="gap-2 bg-orange-500 hover:bg-orange-600 text-white"
               >
                 <Settings className="w-4 h-4" />
@@ -687,6 +689,19 @@ const Index = () => {
         open={scenarioDialogOpen} 
         onOpenChange={setScenarioDialogOpen} 
       />
+
+      {/* System Setup Modal */}
+      <Dialog open={showSetupModal} onOpenChange={setShowSetupModal}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Zap className="w-5 h-5 text-primary" />
+              System Setup
+            </DialogTitle>
+          </DialogHeader>
+          <SystemSetup />
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
