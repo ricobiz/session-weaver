@@ -336,34 +336,31 @@ export function SystemSetup() {
           <div className="mt-6 p-4 rounded-lg border-2 border-dashed border-blue-500/30 bg-blue-500/5">
             <div className="flex items-center gap-2 mb-3">
               <Cloud className="w-5 h-5 text-blue-500" />
-              <span className="font-medium">Start Backend Runner</span>
+              <span className="font-medium">Deploy Backend Runner</span>
             </div>
             
             <p className="text-xs text-muted-foreground mb-4">
-              No runners detected. Run the runner locally or deploy to your server.
-              The runner executes Playwright automation tasks.
+              No runners detected. Deploy from GitHub or run locally.
             </p>
-
-            <div className="p-3 rounded bg-muted/50 mb-4">
-              <p className="text-xs font-medium mb-2">Quick Start (Local):</p>
-              <code className="text-[10px] text-primary break-all">
-                cd runner && npm install && npm start
-              </code>
-            </div>
 
             {railwayStatus?.connected ? (
               <div className="space-y-3">
                 <div className="flex items-center gap-2 text-xs text-green-500">
                   <Check className="w-3 h-3" />
-                  Connected as {railwayStatus.user?.email}
+                  Railway: {railwayStatus.user?.email}
                 </div>
 
-                {railwayStatus.existingRunner ? (
+                <div className="p-2 rounded bg-muted/50 text-xs">
+                  <span className="text-muted-foreground">Source: </span>
+                  <span className="font-medium text-primary">GitHub → ricobiz/session-weaver</span>
+                </div>
+
+                {railwayStatus.existingRunner && (
                   <div className="p-2 rounded bg-muted/50 text-xs">
-                    <span className="text-muted-foreground">Existing runner: </span>
+                    <span className="text-muted-foreground">Runner: </span>
                     <span className="font-medium">{railwayStatus.existingRunner.name}</span>
                   </div>
-                ) : null}
+                )}
 
                 <Button
                   onClick={deployToRailway}
@@ -373,7 +370,7 @@ export function SystemSetup() {
                   {isDeploying ? (
                     <>
                       <Loader2 className="w-4 h-4 animate-spin" />
-                      Deploying...
+                      Deploying from GitHub...
                     </>
                   ) : deployResult?.success ? (
                     <>
@@ -383,10 +380,21 @@ export function SystemSetup() {
                   ) : (
                     <>
                       <Rocket className="w-4 h-4" />
-                      {railwayStatus.existingRunner ? 'Redeploy Runner' : 'Deploy Runner'}
+                      {railwayStatus.existingRunner ? 'Redeploy from GitHub' : 'Deploy from GitHub'}
                     </>
                   )}
                 </Button>
+
+                {deployResult?.dashboardUrl && (
+                  <a 
+                    href={deployResult.dashboardUrl} 
+                    target="_blank" 
+                    rel="noopener noreferrer"
+                    className="block text-center text-xs text-primary hover:underline"
+                  >
+                    Open Railway Dashboard →
+                  </a>
+                )}
               </div>
             ) : railwayStatus === null ? (
               <Button

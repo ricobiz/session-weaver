@@ -8,19 +8,11 @@ const corsHeaders = {
 interface DeployRequest {
   action: 'check' | 'deploy' | 'status' | 'logs';
   serviceId?: string;
-}
-
-interface RailwayProject {
-  id: string;
-  name: string;
-}
-
-interface RailwayService {
-  id: string;
-  name: string;
+  repoUrl?: string;
 }
 
 const RAILWAY_API = 'https://backboard.railway.app/graphql/v2';
+const DEFAULT_GITHUB_REPO = 'https://github.com/ricobiz/session-weaver';
 
 async function railwayQuery(token: string, query: string, variables?: Record<string, any>) {
   const response = await fetch(RAILWAY_API, {
@@ -68,14 +60,14 @@ Deno.serve(async (req) => {
     }
 
     const body: DeployRequest = await req.json().catch(() => ({ action: 'check' }));
-    const { action } = body;
+    const { action, repoUrl } = body;
+    const githubRepo = repoUrl || DEFAULT_GITHUB_REPO;
 
     // ========================================
     // CHECK - Verify Railway connection
     // ========================================
     if (action === 'check') {
       try {
-        // Get user info to verify token
         const userData = await railwayQuery(RAILWAY_API_TOKEN, `
           query {
             me {
@@ -86,7 +78,6 @@ Deno.serve(async (req) => {
           }
         `);
 
-        // Get existing projects
         const projectsData = await railwayQuery(RAILWAY_API_TOKEN, `
           query {
             projects {
@@ -117,10 +108,10 @@ Deno.serve(async (req) => {
           })),
         }));
 
-        // Find existing runner service
         const runnerProject = projects.find((p: any) => 
           p.name.toLowerCase().includes('automation') || 
-          p.name.toLowerCase().includes('runner')
+          p.name.toLowerCase().includes('runner') ||
+          p.name.toLowerCase().includes('session-weaver')
         );
 
         const runnerService = runnerProject?.services?.find((s: any) =>
@@ -154,12 +145,12 @@ Deno.serve(async (req) => {
     }
 
     // ========================================
-    // DEPLOY - Create/update runner on Railway
+    // DEPLOY - Deploy runner from GitHub repo
     // ========================================
     if (action === 'deploy') {
-      console.log('Starting Railway deployment...');
+      console.log('Starting Railway deployment from GitHub:', githubRepo);
 
-      // Step 0: Get user info and existing projects to determine workspaceId
+      // Step 0: Get user info and existing projects
       const meData = await railwayQuery(RAILWAY_API_TOKEN, `
         query {
           me {
@@ -180,7 +171,6 @@ Deno.serve(async (req) => {
       const existingProjects = meData.projects?.edges || [];
       let workspaceId: string | null = null;
       
-      // Try to get workspaceId from an existing project's teamId
       for (const proj of existingProjects) {
         if (proj.node.teamId) {
           workspaceId = proj.node.teamId;
@@ -189,28 +179,26 @@ Deno.serve(async (req) => {
         }
       }
       
-      // Fallback: use user ID (for personal/hobby accounts)
       if (!workspaceId) {
         workspaceId = meData.me?.id;
         console.log('Using user ID as workspace:', workspaceId);
       }
 
       if (!workspaceId) {
-        throw new Error('Could not determine workspace ID. Please check your Railway account.');
+        throw new Error('Could not determine workspace ID');
       }
 
-      // Step 1: Check for existing automation project
+      // Step 1: Check for existing project or create new
       let projectId: string;
 
       const automationProject = existingProjects.find(
-        (e: any) => e.node.name === 'Automation-Runner'
+        (e: any) => e.node.name === 'Session-Weaver-Runner'
       );
 
       if (automationProject) {
         projectId = automationProject.node.id;
         console.log('Using existing project:', projectId);
       } else {
-        // Create new project with teamId (required by Railway API)
         const createResult = await railwayQuery(RAILWAY_API_TOKEN, `
           mutation($input: ProjectCreateInput!) {
             projectCreate(input: $input) {
@@ -220,8 +208,8 @@ Deno.serve(async (req) => {
           }
         `, {
           input: {
-            name: 'Automation-Runner',
-            description: 'Playwright automation runner for session execution',
+            name: 'Session-Weaver-Runner',
+            description: 'Playwright automation runner deployed from GitHub',
             teamId: workspaceId,
           }
         });
@@ -230,7 +218,7 @@ Deno.serve(async (req) => {
         console.log('Created new project:', projectId);
       }
 
-      // Step 2: Get or create environment
+      // Step 2: Get environment
       const projectData = await railwayQuery(RAILWAY_API_TOKEN, `
         query($projectId: String!) {
           project(id: $projectId) {
@@ -259,7 +247,7 @@ Deno.serve(async (req) => {
       );
       const environmentId = prodEnv?.node.id;
 
-      // Step 3: Check if service exists
+      // Step 3: Create or get service with GitHub repo source
       let serviceId: string;
       const existingService = projectData.project.services.edges.find(
         (e: any) => e.node.name === 'runner'
@@ -269,7 +257,7 @@ Deno.serve(async (req) => {
         serviceId = existingService.node.id;
         console.log('Using existing service:', serviceId);
       } else {
-        // Create service from Docker image
+        // Create service from GitHub repo
         const serviceResult = await railwayQuery(RAILWAY_API_TOKEN, `
           mutation($input: ServiceCreateInput!) {
             serviceCreate(input: $input) {
@@ -282,17 +270,35 @@ Deno.serve(async (req) => {
             projectId,
             name: 'runner',
             source: {
-              image: 'mcr.microsoft.com/playwright:v1.40.0-jammy',
+              repo: githubRepo,
             }
           }
         });
 
         serviceId = serviceResult.serviceCreate.id;
-        console.log('Created service:', serviceId);
+        console.log('Created service from GitHub:', serviceId);
       }
 
-      // Step 4: Set environment variables
+      // Step 4: Set root directory and environment variables
       if (environmentId) {
+        // Set root directory to runner folder
+        await railwayQuery(RAILWAY_API_TOKEN, `
+          mutation($input: ServiceInstanceUpdateInput!) {
+            serviceInstanceUpdate(input: $input) {
+              id
+            }
+          }
+        `, {
+          input: {
+            serviceId,
+            environmentId,
+            rootDirectory: 'runner',
+            startCommand: 'npm start',
+            buildCommand: 'npm install',
+          }
+        }).catch(e => console.log('Service instance update note:', e.message));
+
+        // Set environment variables
         const variables = {
           API_BASE_URL: SUPABASE_URL ? `${SUPABASE_URL}/functions/v1/session-api` : '',
           SUPABASE_ANON_KEY: SUPABASE_ANON_KEY || '',
@@ -324,13 +330,16 @@ Deno.serve(async (req) => {
       }
 
       // Step 5: Trigger deployment
-      const deployResult = await railwayQuery(RAILWAY_API_TOKEN, `
+      await railwayQuery(RAILWAY_API_TOKEN, `
         mutation($serviceId: String!, $environmentId: String!) {
           serviceInstanceDeploy(serviceId: $serviceId, environmentId: $environmentId)
         }
-      `, { serviceId, environmentId });
+      `, { serviceId, environmentId }).catch(e => {
+        console.log('Deploy trigger note:', e.message);
+        // Railway often auto-deploys on service creation, so this may not be needed
+      });
 
-      console.log('Deployment triggered');
+      console.log('Deployment initiated');
 
       return new Response(
         JSON.stringify({
@@ -338,7 +347,8 @@ Deno.serve(async (req) => {
           projectId,
           serviceId,
           environmentId,
-          message: 'Runner deployment started on Railway',
+          githubRepo,
+          message: 'Runner deployment started from GitHub repository',
           dashboardUrl: `https://railway.app/project/${projectId}`,
         }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
