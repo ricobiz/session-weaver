@@ -6,7 +6,7 @@ const corsHeaders = {
 };
 
 interface DeployRequest {
-  action: 'check' | 'deploy' | 'status' | 'logs' | 'delete-project' | 'delete-service';
+  action: 'check' | 'deploy' | 'status' | 'logs' | 'delete-project' | 'delete-service' | 'cleanup' | 'redeploy';
   serviceId?: string;
   projectId?: string;
   repoUrl?: string;
@@ -498,6 +498,167 @@ Deno.serve(async (req) => {
         JSON.stringify({
           success: true,
           message: 'Service deleted successfully',
+        }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // ========================================
+    // CLEANUP - Delete duplicate runner projects, keep only the first active one
+    // ========================================
+    if (action === 'cleanup') {
+      console.log('Cleaning up duplicate projects...');
+      
+      const projectsData = await railwayQuery(RAILWAY_API_TOKEN, `
+        query {
+          projects {
+            edges {
+              node {
+                id
+                name
+                createdAt
+                services {
+                  edges {
+                    node {
+                      id
+                      name
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      `);
+
+      const allProjects = projectsData.projects.edges.map((e: any) => ({
+        id: e.node.id,
+        name: e.node.name,
+        createdAt: e.node.createdAt,
+        services: e.node.services.edges.map((s: any) => s.node),
+      }));
+
+      // Find all runner-related projects
+      const runnerProjects = allProjects.filter((p: any) => 
+        p.name.toLowerCase().includes('session-weaver') ||
+        p.name.toLowerCase().includes('runner')
+      );
+
+      console.log(`Found ${runnerProjects.length} runner projects`);
+
+      if (runnerProjects.length <= 1) {
+        return new Response(
+          JSON.stringify({
+            success: true,
+            message: 'No duplicate projects to clean up',
+            projects: runnerProjects,
+          }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      // Sort by creation date, keep the newest one (or one with most services)
+      runnerProjects.sort((a: any, b: any) => {
+        // Prefer projects with services
+        if (a.services.length !== b.services.length) {
+          return b.services.length - a.services.length;
+        }
+        // Then by date (newest first)
+        return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+      });
+
+      const keepProject = runnerProjects[0];
+      const deleteProjects = runnerProjects.slice(1);
+
+      console.log(`Keeping project: ${keepProject.name} (${keepProject.id})`);
+      console.log(`Deleting ${deleteProjects.length} duplicate projects`);
+
+      const deleted: string[] = [];
+      const failed: string[] = [];
+
+      for (const project of deleteProjects) {
+        try {
+          await railwayQuery(RAILWAY_API_TOKEN, `
+            mutation($id: String!) {
+              projectDelete(id: $id)
+            }
+          `, { id: project.id });
+          deleted.push(project.name);
+          console.log(`Deleted: ${project.name}`);
+        } catch (e) {
+          failed.push(project.name);
+          console.log(`Failed to delete: ${project.name}`, e);
+        }
+      }
+
+      return new Response(
+        JSON.stringify({
+          success: true,
+          message: `Cleaned up ${deleted.length} duplicate projects`,
+          kept: keepProject,
+          deleted,
+          failed,
+        }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // ========================================
+    // REDEPLOY - Redeploy existing service without creating new project
+    // ========================================
+    if (action === 'redeploy') {
+      const { projectId, serviceId } = body;
+      
+      if (!projectId || !serviceId) {
+        return new Response(
+          JSON.stringify({
+            success: false,
+            error: 'projectId and serviceId are required for redeploy',
+          }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      // Get environment ID
+      const projectData = await railwayQuery(RAILWAY_API_TOKEN, `
+        query($projectId: String!) {
+          project(id: $projectId) {
+            environments {
+              edges {
+                node {
+                  id
+                  name
+                }
+              }
+            }
+          }
+        }
+      `, { projectId });
+
+      const prodEnv = projectData.project.environments.edges.find(
+        (e: any) => e.node.name === 'production'
+      );
+      const environmentId = prodEnv?.node.id;
+
+      if (!environmentId) {
+        throw new Error('Production environment not found');
+      }
+
+      // Trigger deployment
+      await railwayQuery(RAILWAY_API_TOKEN, `
+        mutation($serviceId: String!, $environmentId: String!) {
+          serviceInstanceDeploy(serviceId: $serviceId, environmentId: $environmentId)
+        }
+      `, { serviceId, environmentId });
+
+      return new Response(
+        JSON.stringify({
+          success: true,
+          message: 'Redeployment triggered',
+          projectId,
+          serviceId,
+          environmentId,
+          dashboardUrl: `https://railway.app/project/${projectId}`,
         }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
