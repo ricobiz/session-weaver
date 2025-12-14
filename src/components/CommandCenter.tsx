@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -26,6 +26,7 @@ interface ParsedIntent {
   entry_method: 'url' | 'search';
   target: string;
   profile_count: number;
+  run_count: number;  // Batch: runs per profile
   behavior: {
     min_duration: number;
     max_duration: number;
@@ -47,12 +48,25 @@ interface GeneratedTask {
 
 type CommandState = 'input' | 'parsing' | 'review' | 'running' | 'complete';
 
-export function CommandCenter() {
-  const [command, setCommand] = useState('');
+interface CommandCenterProps {
+  initialCommand?: string;
+  onCommandUsed?: () => void;
+}
+
+export function CommandCenter({ initialCommand, onCommandUsed }: CommandCenterProps = {}) {
+  const [command, setCommand] = useState(initialCommand || '');
   const [state, setState] = useState<CommandState>('input');
   const [parsedIntent, setParsedIntent] = useState<ParsedIntent | null>(null);
   const [generatedTask, setGeneratedTask] = useState<GeneratedTask | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
+
+  // Handle initial command from template
+  useEffect(() => {
+    if (initialCommand && initialCommand !== command) {
+      setCommand(initialCommand);
+      onCommandUsed?.();
+    }
+  }, [initialCommand]);
 
   const parseCommand = async () => {
     if (!command.trim()) return;
@@ -123,6 +137,18 @@ export function CommandCenter() {
       profile_count = -1; // -1 means all
     }
 
+    // Detect run count (batch execution)
+    let run_count = 1;
+    const runMatch = input.match(/(\d+)\s*(?:time|run|iteration|repeat)/i);
+    const timesMatch = input.match(/(\d+)x\b/i);
+    if (runMatch) {
+      run_count = parseInt(runMatch[1], 10);
+    } else if (timesMatch) {
+      run_count = parseInt(timesMatch[1], 10);
+    } else if (lower.includes('repeat') || lower.includes('loop') || lower.includes('continuous')) {
+      run_count = 5; // Default batch size
+    }
+
     // Detect duration hints
     let min_duration = 30;
     let max_duration = 120;
@@ -140,7 +166,8 @@ export function CommandCenter() {
 
     // Build human summary
     const profileText = profile_count === -1 ? 'all profiles' : `${profile_count} profile${profile_count > 1 ? 's' : ''}`;
-    const human_summary = `${goal.charAt(0).toUpperCase() + goal.slice(1)} on ${platform} via ${entry_method === 'url' ? 'direct link' : 'search'} "${target}" using ${profileText}`;
+    const runText = run_count > 1 ? ` × ${run_count} runs` : '';
+    const human_summary = `${goal.charAt(0).toUpperCase() + goal.slice(1)} on ${platform} via ${entry_method === 'url' ? 'direct link' : 'search'} "${target}" using ${profileText}${runText}`;
 
     return {
       platform,
@@ -148,6 +175,7 @@ export function CommandCenter() {
       entry_method,
       target,
       profile_count,
+      run_count,
       behavior: {
         min_duration,
         max_duration,
@@ -187,7 +215,7 @@ export function CommandCenter() {
           search_query: intent.entry_method === 'search' ? intent.target : null,
           goal_type: intent.goal,
           profile_ids: profileIds,
-          run_count: 1,
+          run_count: intent.run_count,
           behavior_config: {
             min_duration: intent.behavior.min_duration,
             max_duration: intent.behavior.max_duration,
@@ -352,7 +380,7 @@ Examples:
             </div>
 
             {/* Parsed Details */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
               <div className="flex items-center gap-2 text-sm">
                 <Target className="h-4 w-4 text-muted-foreground" />
                 <span className="text-muted-foreground">Platform:</span>
@@ -369,11 +397,34 @@ Examples:
                 <Badge variant="outline">{parsedIntent.profile_count === -1 ? 'All' : parsedIntent.profile_count}</Badge>
               </div>
               <div className="flex items-center gap-2 text-sm">
+                <RotateCcw className="h-4 w-4 text-muted-foreground" />
+                <span className="text-muted-foreground">Runs:</span>
+                <Badge variant={parsedIntent.run_count > 1 ? 'default' : 'outline'}>
+                  {parsedIntent.run_count}×
+                </Badge>
+              </div>
+              <div className="flex items-center gap-2 text-sm">
                 <Clock className="h-4 w-4 text-muted-foreground" />
                 <span className="text-muted-foreground">Duration:</span>
                 <Badge variant="outline">{parsedIntent.behavior.min_duration}-{parsedIntent.behavior.max_duration}s</Badge>
               </div>
             </div>
+
+            {/* Batch Execution Info */}
+            {parsedIntent.run_count > 1 && (
+              <div className="bg-primary/5 border border-primary/20 rounded-lg p-3 text-sm">
+                <div className="flex items-center gap-2 text-primary font-medium">
+                  <RotateCcw className="h-4 w-4" />
+                  Batch Execution
+                </div>
+                <p className="text-muted-foreground mt-1">
+                  Each profile will run {parsedIntent.run_count} times = {' '}
+                  <span className="font-medium text-foreground">
+                    {(parsedIntent.profile_count === -1 ? '?' : parsedIntent.profile_count) as number * parsedIntent.run_count} total sessions
+                  </span>
+                </p>
+              </div>
+            )}
 
             <Separator />
 
