@@ -82,6 +82,7 @@ export interface ResumeMetadata {
   lastSuccessfulStep: number;
   lastAttemptAt: string;
   stepStates?: Record<number, StepState>;
+  errorCategory?: string;
 }
 
 // Step execution state

@@ -127,7 +127,7 @@ export class SessionExecutor {
               status: canRetrySession ? 'running' : 'error',
               error_message: stepResult.error,
               current_step: i,
-              last_successful_step: i > 0 ? i - 1 : null,
+              last_successful_step: i > 0 ? i - 1 : undefined,
               is_resumable: isResumable,
               retry_count: sessionRetryCount,
               resume_metadata: {
