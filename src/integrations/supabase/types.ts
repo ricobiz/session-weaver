@@ -14,6 +14,115 @@ export type Database = {
   }
   public: {
     Tables: {
+      action_verifications: {
+        Row: {
+          action_index: number
+          action_type: string
+          after_state: Json | null
+          before_state: Json | null
+          confidence: number | null
+          created_at: string
+          evidence: Json
+          id: string
+          session_id: string
+          verification_type: string
+          verified: boolean
+          verified_at: string | null
+        }
+        Insert: {
+          action_index: number
+          action_type: string
+          after_state?: Json | null
+          before_state?: Json | null
+          confidence?: number | null
+          created_at?: string
+          evidence?: Json
+          id?: string
+          session_id: string
+          verification_type: string
+          verified?: boolean
+          verified_at?: string | null
+        }
+        Update: {
+          action_index?: number
+          action_type?: string
+          after_state?: Json | null
+          before_state?: Json | null
+          confidence?: number | null
+          created_at?: string
+          evidence?: Json
+          id?: string
+          session_id?: string
+          verification_type?: string
+          verified?: boolean
+          verified_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "action_verifications_session_id_fkey"
+            columns: ["session_id"]
+            isOneToOne: false
+            referencedRelation: "sessions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      automation_bots: {
+        Row: {
+          avg_execution_time_ms: number | null
+          created_at: string
+          created_by_task_id: string | null
+          description: string | null
+          execution_count: number | null
+          failure_count: number | null
+          id: string
+          is_active: boolean | null
+          name: string
+          scenario_json: Json
+          success_count: number | null
+          target_platform: string
+          updated_at: string
+        }
+        Insert: {
+          avg_execution_time_ms?: number | null
+          created_at?: string
+          created_by_task_id?: string | null
+          description?: string | null
+          execution_count?: number | null
+          failure_count?: number | null
+          id?: string
+          is_active?: boolean | null
+          name: string
+          scenario_json?: Json
+          success_count?: number | null
+          target_platform: string
+          updated_at?: string
+        }
+        Update: {
+          avg_execution_time_ms?: number | null
+          created_at?: string
+          created_by_task_id?: string | null
+          description?: string | null
+          execution_count?: number | null
+          failure_count?: number | null
+          id?: string
+          is_active?: boolean | null
+          name?: string
+          scenario_json?: Json
+          success_count?: number | null
+          target_platform?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "automation_bots_created_by_task_id_fkey"
+            columns: ["created_by_task_id"]
+            isOneToOne: false
+            referencedRelation: "tasks"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       execution_queue: {
         Row: {
           claimed_at: string | null
@@ -281,6 +390,7 @@ export type Database = {
       }
       sessions: {
         Row: {
+          automation_bot_id: string | null
           captcha_detected_at: string | null
           captcha_resolved_at: string | null
           captcha_status: string | null
@@ -308,8 +418,10 @@ export type Database = {
           task_id: string | null
           total_steps: number | null
           updated_at: string
+          verification_score: number | null
         }
         Insert: {
+          automation_bot_id?: string | null
           captcha_detected_at?: string | null
           captcha_resolved_at?: string | null
           captcha_status?: string | null
@@ -337,8 +449,10 @@ export type Database = {
           task_id?: string | null
           total_steps?: number | null
           updated_at?: string
+          verification_score?: number | null
         }
         Update: {
+          automation_bot_id?: string | null
           captcha_detected_at?: string | null
           captcha_resolved_at?: string | null
           captcha_status?: string | null
@@ -366,8 +480,16 @@ export type Database = {
           task_id?: string | null
           total_steps?: number | null
           updated_at?: string
+          verification_score?: number | null
         }
         Relationships: [
+          {
+            foreignKeyName: "sessions_automation_bot_id_fkey"
+            columns: ["automation_bot_id"]
+            isOneToOne: false
+            referencedRelation: "automation_bots"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "sessions_profile_id_fkey"
             columns: ["profile_id"]
