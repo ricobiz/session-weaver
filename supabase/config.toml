@@ -44,3 +44,6 @@ verify_jwt = false
 
 [functions.ai-model-optimizer]
 verify_jwt = false
+
+[functions.system-setup]
+verify_jwt = false

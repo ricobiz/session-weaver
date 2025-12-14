@@ -21,6 +21,7 @@ import { GeneratedScenarioPreview } from '@/components/GeneratedScenarioPreview'
 import { AISettingsPanel } from '@/components/AISettingsPanel';
 import { OpenRouterBalance } from '@/components/OpenRouterBalance';
 import { RunnerStatus } from '@/components/RunnerStatus';
+import { SystemSetup } from '@/components/SystemSetup';
 import { Button } from '@/components/ui/button';
 import {
   useStats, 
@@ -92,7 +93,7 @@ const Index = () => {
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [profileDialogOpen, setProfileDialogOpen] = useState(false);
   const [scenarioDialogOpen, setScenarioDialogOpen] = useState(false);
-  const [rightPanelView, setRightPanelView] = useState<'live' | 'logs' | 'timeline' | 'metrics' | 'ai' | 'settings'>('live');
+  const [rightPanelView, setRightPanelView] = useState<'live' | 'logs' | 'timeline' | 'metrics' | 'ai' | 'settings' | 'setup'>('setup');
   const [aiModel, setAiModel] = useState(() => localStorage.getItem('ai_selected_model') || 'anthropic/claude-sonnet-4-5');
 
   const { data: logs = [] } = useSessionLogs(selectedSessionId);
@@ -464,12 +465,14 @@ const Index = () => {
           <div className="lg:col-span-4 space-y-4">
             <div className="flex items-center justify-between mb-2">
               <div className="flex items-center gap-2 text-sm font-medium">
+                {rightPanelView === 'setup' && <Zap className="w-4 h-4 text-primary" />}
                 {rightPanelView === 'live' && <Eye className="w-4 h-4 text-primary" />}
                 {rightPanelView === 'logs' && <Terminal className="w-4 h-4 text-primary" />}
                 {rightPanelView === 'timeline' && <AlignLeft className="w-4 h-4 text-primary" />}
                 {rightPanelView === 'metrics' && <BarChart3 className="w-4 h-4 text-primary" />}
                 {rightPanelView === 'ai' && <Sparkles className="w-4 h-4 text-primary" />}
                 {rightPanelView === 'settings' && <Settings className="w-4 h-4 text-primary" />}
+                {rightPanelView === 'setup' && 'System Setup'}
                 {rightPanelView === 'live' && 'Live Session'}
                 {rightPanelView === 'logs' && 'Session Output'}
                 {rightPanelView === 'timeline' && 'Execution Timeline'}
@@ -478,6 +481,15 @@ const Index = () => {
                 {rightPanelView === 'settings' && 'AI Settings'}
               </div>
               <div className="flex gap-1">
+                <Button
+                  size="sm"
+                  variant={rightPanelView === 'setup' ? 'default' : 'ghost'}
+                  onClick={() => setRightPanelView('setup')}
+                  className="h-7 px-2"
+                  title="System Setup"
+                >
+                  <Zap className="w-3.5 h-3.5" />
+                </Button>
                 <Button
                   size="sm"
                   variant={rightPanelView === 'live' ? 'default' : 'ghost'}
@@ -529,6 +541,10 @@ const Index = () => {
               </div>
             </div>
             
+            {rightPanelView === 'setup' && (
+              <SystemSetup />
+            )}
+
             {rightPanelView === 'live' && (
               selectedSession ? (
                 <LiveSessionView
