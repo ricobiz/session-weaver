@@ -90,9 +90,26 @@ Deno.serve(async (req) => {
           
           if (response.ok) {
             const data = await response.json();
-            // OpenRouter returns limit_remaining in dollars (not cents)
-            const balance = data.data?.limit_remaining ?? data.data?.usage ?? 0;
-            const balanceDisplay = typeof balance === 'number' ? balance.toFixed(2) : '0.00';
+            console.log('OpenRouter response:', JSON.stringify(data));
+            
+            // OpenRouter API returns credits/limit info in data.data
+            // Check various possible fields for balance
+            const limitRemaining = data.data?.limit_remaining;
+            const limit = data.data?.limit;
+            const usage = data.data?.usage;
+            
+            // Calculate balance: if limit_remaining exists use it, otherwise calculate from limit - usage
+            let balance = 0;
+            if (typeof limitRemaining === 'number') {
+              balance = limitRemaining;
+            } else if (typeof limit === 'number' && typeof usage === 'number') {
+              balance = limit - usage;
+            } else if (typeof limit === 'number') {
+              balance = limit;
+            }
+            
+            const balanceDisplay = balance.toFixed(2);
+            console.log('Calculated balance:', balance, 'Display:', balanceDisplay);
             
             modules.push({
               name: 'openrouter',
@@ -101,6 +118,8 @@ Deno.serve(async (req) => {
               details: `$${balanceDisplay} remaining`,
             });
           } else {
+            const errorText = await response.text();
+            console.error('OpenRouter API error:', response.status, errorText);
             modules.push({
               name: 'openrouter',
               status: 'error',
@@ -109,6 +128,7 @@ Deno.serve(async (req) => {
             });
           }
         } catch (e) {
+          console.error('OpenRouter connection error:', e);
           modules.push({
             name: 'openrouter',
             status: 'error',
