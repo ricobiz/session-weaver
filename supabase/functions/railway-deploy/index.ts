@@ -12,7 +12,7 @@ interface DeployRequest {
   repoUrl?: string;
 }
 
-const RAILWAY_API = 'https://backboard.railway.app/graphql/v2';
+const RAILWAY_API = 'https://backboard.railway.com/graphql/v2';
 
 async function railwayQuery(token: string, query: string, variables?: Record<string, any>) {
   const response = await fetch(RAILWAY_API, {
@@ -67,28 +67,24 @@ Deno.serve(async (req) => {
     // ========================================
     if (action === 'check') {
       try {
-        const userData = await railwayQuery(RAILWAY_API_TOKEN, `
+        // Get user info and projects
+        const data = await railwayQuery(RAILWAY_API_TOKEN, `
           query {
             me {
               id
               email
               name
-            }
-          }
-        `);
-
-        const projectsData = await railwayQuery(RAILWAY_API_TOKEN, `
-          query {
-            projects {
-              edges {
-                node {
-                  id
-                  name
-                  services {
-                    edges {
-                      node {
-                        id
-                        name
+              projects {
+                edges {
+                  node {
+                    id
+                    name
+                    services {
+                      edges {
+                        node {
+                          id
+                          name
+                        }
                       }
                     }
                   }
@@ -98,14 +94,18 @@ Deno.serve(async (req) => {
           }
         `);
 
-        const projects = projectsData.projects.edges.map((e: any) => ({
+        console.log('Full API response:', JSON.stringify(data));
+
+        const projects = (data.me?.projects?.edges || []).map((e: any) => ({
           id: e.node.id,
           name: e.node.name,
-          services: e.node.services.edges.map((s: any) => ({
+          services: (e.node.services?.edges || []).map((s: any) => ({
             id: s.node.id,
             name: s.node.name,
           })),
         }));
+
+        console.log('Found projects:', projects.length);
 
         const runnerProject = projects.find((p: any) => 
           p.name.toLowerCase().includes('automation') || 
@@ -121,7 +121,7 @@ Deno.serve(async (req) => {
           JSON.stringify({
             success: true,
             connected: true,
-            user: userData.me,
+            user: { id: data.me?.id, email: data.me?.email, name: data.me?.name },
             projects,
             existingRunner: runnerService ? {
               projectId: runnerProject.id,
@@ -132,6 +132,7 @@ Deno.serve(async (req) => {
           { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       } catch (error) {
+        console.error('Check error:', error);
         return new Response(
           JSON.stringify({
             success: false,
@@ -160,20 +161,15 @@ Deno.serve(async (req) => {
       
       console.log('Starting Railway deployment from GitHub:', repoUrl);
 
-      // Step 0: Get user info and find workspace/projects
-      // First, get me info and projects list
+      // Step 0: Get user info and projects
       const meData = await railwayQuery(RAILWAY_API_TOKEN, `
         query {
           me {
             id
             name
-          }
-          projects {
-            edges {
-              node {
-                id
-                name
-                team {
+            projects {
+              edges {
+                node {
                   id
                   name
                 }
@@ -183,25 +179,9 @@ Deno.serve(async (req) => {
         }
       `);
 
-      const existingProjects = meData.projects?.edges || [];
       const userId = meData.me?.id;
-      console.log('Found', existingProjects.length, 'existing projects, userId:', userId);
-      
-      // Try to find workspace ID from existing projects' team, or use user ID for personal
-      let workspaceId: string | null = null;
-      for (const proj of existingProjects) {
-        if (proj.node.team?.id) {
-          workspaceId = proj.node.team.id;
-          console.log('Found workspace from existing project:', proj.node.team.name, workspaceId);
-          break;
-        }
-      }
-      
-      // For personal accounts, use user ID as workspaceId
-      if (!workspaceId && userId) {
-        workspaceId = userId;
-        console.log('Using user ID as workspace for personal account:', workspaceId);
-      }
+      const existingProjects = meData.me?.projects?.edges || [];
+      console.log('User ID:', userId, 'Found', existingProjects.length, 'existing projects');
 
       // Step 1: Find existing project - DO NOT create new ones
       let projectId: string | null = null;
@@ -222,10 +202,6 @@ Deno.serve(async (req) => {
         console.log('Using first available project:', existingProjects[0].node.name, projectId);
       } else {
         // Only create if absolutely no projects exist
-        if (!workspaceId) {
-          throw new Error('Cannot determine workspace ID. Please ensure you have a Railway account.');
-        }
-        
         const createResult = await railwayQuery(RAILWAY_API_TOKEN, `
           mutation($input: ProjectCreateInput!) {
             projectCreate(input: $input) {
@@ -238,7 +214,6 @@ Deno.serve(async (req) => {
             name: 'session-weaver-runner',
             description: 'Playwright automation runner',
             isPublic: false,
-            teamId: workspaceId,
           }
         });
 
@@ -509,19 +484,23 @@ Deno.serve(async (req) => {
     if (action === 'cleanup') {
       console.log('Cleaning up duplicate projects...');
       
-      const projectsData = await railwayQuery(RAILWAY_API_TOKEN, `
+      // Get all projects using me query
+      const meData = await railwayQuery(RAILWAY_API_TOKEN, `
         query {
-          projects {
-            edges {
-              node {
-                id
-                name
-                createdAt
-                services {
-                  edges {
-                    node {
-                      id
-                      name
+          me {
+            id
+            projects {
+              edges {
+                node {
+                  id
+                  name
+                  createdAt
+                  services {
+                    edges {
+                      node {
+                        id
+                        name
+                      }
                     }
                   }
                 }
@@ -530,13 +509,15 @@ Deno.serve(async (req) => {
           }
         }
       `);
-
-      const allProjects = projectsData.projects.edges.map((e: any) => ({
+      
+      const allProjects = (meData.me?.projects?.edges || []).map((e: any) => ({
         id: e.node.id,
         name: e.node.name,
         createdAt: e.node.createdAt,
-        services: e.node.services.edges.map((s: any) => s.node),
+        services: (e.node.services?.edges || []).map((s: any) => s.node),
       }));
+      
+      console.log('All projects found:', allProjects.length, allProjects.map((p: any) => p.name));
 
       // Find all runner-related projects
       const runnerProjects = allProjects.filter((p: any) => 
