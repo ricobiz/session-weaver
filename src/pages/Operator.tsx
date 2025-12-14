@@ -26,6 +26,10 @@ import {
   RotateCw,
   Zap,
   Brain,
+  Pause,
+  Play,
+  Trash2,
+  Copy,
 } from 'lucide-react';
 import { OperatorBalanceHeader } from '@/components/operator/OperatorBalanceHeader';
 import { TaskPlanner } from '@/components/TaskPlanner';
@@ -76,13 +80,23 @@ interface ChatMessage {
   userCommand?: string;
 }
 
+const STORAGE_KEY_MODEL = 'operator-selected-model';
+
 const Operator = () => {
   const [command, setCommand] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
-  const [selectedModel, setSelectedModel] = useState('google/gemini-2.5-flash');
+  const [selectedModel, setSelectedModel] = useState(() => {
+    return localStorage.getItem(STORAGE_KEY_MODEL) || 'google/gemini-2.5-flash';
+  });
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [loadingScreenshots, setLoadingScreenshots] = useState<Set<string>>(new Set());
   const scrollRef = useRef<HTMLDivElement>(null);
+
+  // Persist model selection
+  const handleModelChange = (model: string) => {
+    setSelectedModel(model);
+    localStorage.setItem(STORAGE_KEY_MODEL, model);
+  };
 
   // Auto-scroll to bottom
   useEffect(() => {
@@ -344,6 +358,67 @@ const Operator = () => {
     }
   };
 
+  const handlePauseTask = async (taskId: string) => {
+    try {
+      await supabase.from('tasks').update({ status: 'paused' }).eq('id', taskId);
+      await supabase.from('sessions').update({ status: 'paused' }).eq('task_id', taskId).eq('status', 'queued');
+      addMessage({ type: 'system', content: 'Task paused' });
+      refetchTasks();
+    } catch {
+      toast({ title: 'Failed to pause task', variant: 'destructive' });
+    }
+  };
+
+  const handleResumeTask = async (taskId: string) => {
+    try {
+      await supabase.from('tasks').update({ status: 'active' }).eq('id', taskId);
+      await supabase.from('sessions').update({ status: 'queued' }).eq('task_id', taskId).eq('status', 'paused');
+      addMessage({ type: 'system', content: 'Task resumed' });
+      refetchTasks();
+    } catch {
+      toast({ title: 'Failed to resume task', variant: 'destructive' });
+    }
+  };
+
+  const handleDeleteTask = async (taskId: string) => {
+    try {
+      // First cancel all sessions
+      await supabase.from('sessions').update({ status: 'cancelled' }).eq('task_id', taskId);
+      // Delete task
+      await supabase.from('tasks').delete().eq('id', taskId);
+      addMessage({ type: 'system', content: 'Task deleted' });
+      refetchTasks();
+      refetchSessions();
+    } catch {
+      toast({ title: 'Failed to delete task', variant: 'destructive' });
+    }
+  };
+
+  const handleDuplicateTask = async (taskId: string) => {
+    try {
+      const { data: task } = await supabase.from('tasks').select('*').eq('id', taskId).single();
+      if (!task) return;
+      
+      const { data: newTask, error } = await supabase.from('tasks').insert({
+        name: `${task.name} (copy)`,
+        description: task.description,
+        target_platform: task.target_platform,
+        target_url: task.target_url,
+        goal_type: task.goal_type,
+        entry_method: task.entry_method,
+        behavior_config: task.behavior_config,
+        profile_ids: task.profile_ids,
+        status: 'pending',
+      }).select().single();
+      
+      if (error) throw error;
+      addMessage({ type: 'success', content: `Task duplicated: ${newTask.name}` });
+      refetchTasks();
+    } catch {
+      toast({ title: 'Failed to duplicate task', variant: 'destructive' });
+    }
+  };
+
   return (
     <div className="h-screen bg-background flex flex-col overflow-hidden">
       {/* Compact Header */}
@@ -359,7 +434,7 @@ const Operator = () => {
           <div className="flex items-center gap-2">
             <OperatorBalanceHeader 
               selectedModel={selectedModel}
-              onModelChange={setSelectedModel}
+              onModelChange={handleModelChange}
             />
             <Separator orientation="vertical" className="h-5" />
             <Button variant="ghost" size="sm" asChild className="h-7 px-2 text-muted-foreground">
@@ -471,7 +546,9 @@ const Operator = () => {
                 </span>
                 {activeTasks.map((task) => (
                   <div key={task.id} className="flex items-center gap-2 px-3 py-2 rounded-lg bg-card/60 border border-border/40">
-                    {task.sessionsRunning > 0 ? (
+                    {task.status === 'paused' ? (
+                      <Pause className="w-3.5 h-3.5 text-amber-500 flex-shrink-0" />
+                    ) : task.sessionsRunning > 0 ? (
                       <Activity className="w-3.5 h-3.5 text-primary animate-pulse flex-shrink-0" />
                     ) : (
                       <Clock className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" />
@@ -483,14 +560,60 @@ const Operator = () => {
                       <span>/</span>
                       <span>{task.sessionsTotal}</span>
                     </div>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      onClick={() => handleStop(task.id)}
-                      className="h-6 w-6 p-0 hover:bg-destructive/10 hover:text-destructive"
-                    >
-                      <Square className="w-3 h-3" />
-                    </Button>
+                    <div className="flex items-center gap-0.5">
+                      {/* Pause/Resume */}
+                      {task.status === 'paused' ? (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => handleResumeTask(task.id)}
+                          className="h-6 w-6 p-0 hover:bg-emerald-500/10 hover:text-emerald-500"
+                          title="Resume"
+                        >
+                          <Play className="w-3 h-3" />
+                        </Button>
+                      ) : (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => handlePauseTask(task.id)}
+                          className="h-6 w-6 p-0 hover:bg-amber-500/10 hover:text-amber-500"
+                          title="Pause"
+                        >
+                          <Pause className="w-3 h-3" />
+                        </Button>
+                      )}
+                      {/* Duplicate */}
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => handleDuplicateTask(task.id)}
+                        className="h-6 w-6 p-0 hover:bg-primary/10 hover:text-primary"
+                        title="Duplicate"
+                      >
+                        <Copy className="w-3 h-3" />
+                      </Button>
+                      {/* Stop */}
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => handleStop(task.id)}
+                        className="h-6 w-6 p-0 hover:bg-destructive/10 hover:text-destructive"
+                        title="Stop"
+                      >
+                        <Square className="w-3 h-3" />
+                      </Button>
+                      {/* Delete */}
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => handleDeleteTask(task.id)}
+                        className="h-6 w-6 p-0 hover:bg-destructive/10 hover:text-destructive"
+                        title="Delete"
+                      >
+                        <Trash2 className="w-3 h-3" />
+                      </Button>
+                    </div>
                   </div>
                 ))}
               </div>
