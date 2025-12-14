@@ -304,32 +304,42 @@ Deno.serve(async (req) => {
         console.log('Created service from GitHub:', serviceId);
       }
 
-      // Step 4: Set root directory using service source update
+      // Step 4: Configure service for Docker builder and root directory
       if (environmentId) {
-        // Update source to set root directory to runner folder
+        // Update service instance to use Docker builder with runner directory
         await railwayQuery(RAILWAY_API_TOKEN, `
-          mutation($id: String!, $source: ServiceSourceInput!) {
-            serviceUpdate(id: $id, input: { source: $source })
-          }
-        `, {
-          id: serviceId,
-          source: {
-            repo: repoUrl.replace(/^https?:\/\/github\.com\//, '').replace(/\.git$/, ''),
-            rootDirectory: 'runner'
-          }
-        }).catch(e => console.log('Service source update note:', e.message));
-
-        // Also try the instance update for build settings
-        await railwayQuery(RAILWAY_API_TOKEN, `
-          mutation($serviceId: String!, $environmentId: String!) {
-            serviceInstanceUpdate(serviceId: $serviceId, environmentId: $environmentId, input: {
-              startCommand: "npm start"
-            })
+          mutation($serviceId: String!, $environmentId: String!, $input: ServiceInstanceUpdateInput!) {
+            serviceInstanceUpdate(serviceId: $serviceId, environmentId: $environmentId, input: $input) {
+              id
+            }
           }
         `, {
           serviceId,
-          environmentId
-        }).catch(e => console.log('Service instance update note:', e.message));
+          environmentId,
+          input: {
+            builder: 'DOCKERFILE',
+            rootDirectory: 'runner',
+            startCommand: 'npm start',
+            watchPatterns: ['runner/**']
+          }
+        }).then(() => console.log('Service configured for Docker build'))
+          .catch(e => console.log('Service instance update note:', e.message));
+
+        // Fallback: try setting root directory via service source
+        await railwayQuery(RAILWAY_API_TOKEN, `
+          mutation($id: String!, $input: ServiceUpdateInput!) {
+            serviceUpdate(id: $id, input: $input) {
+              id
+            }
+          }
+        `, {
+          id: serviceId,
+          input: {
+            source: {
+              repo: repoUrl.replace(/^https?:\/\/github\.com\//, '').replace(/\.git$/, '')
+            }
+          }
+        }).catch(e => console.log('Service source update note:', e.message));
 
         // Set environment variables
         const variables = {
