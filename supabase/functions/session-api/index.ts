@@ -991,7 +991,7 @@ serve(async (req) => {
     // ============================================
 
     const OPENROUTER_API_KEY = Deno.env.get('OPENROUTER_API_KEY');
-    const DEFAULT_MODEL = 'anthropic/claude-sonnet-4-5';
+    const DEFAULT_MODEL = 'anthropic/claude-3.5-sonnet';
 
     // Helper function for OpenRouter API calls
     async function callOpenRouter(model: string, messages: Array<{role: string, content: string}>) {

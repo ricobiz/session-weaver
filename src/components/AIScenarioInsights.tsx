@@ -159,13 +159,15 @@ export function AIScenarioInsights({ scenarioId, scenarioName }: AIScenarioInsig
             </div>
 
             {/* Duration */}
-            <div className="flex items-center justify-between">
-              <span className="text-xs text-muted-foreground">Duration</span>
-              <span className="text-xs font-mono">~{analysis.duration_analysis.estimated_seconds}s</span>
-            </div>
+            {analysis.duration_analysis && (
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-muted-foreground">Duration</span>
+                <span className="text-xs font-mono">~{analysis.duration_analysis.estimated_seconds}s</span>
+              </div>
+            )}
 
             {/* Risk Factors */}
-            {analysis.risk_factors.length > 0 && (
+            {analysis.risk_factors && analysis.risk_factors.length > 0 && (
               <div className="pt-2 border-t border-border">
                 <div className="flex items-center gap-1 mb-2">
                   <AlertTriangle className="w-3 h-3 text-amber-500" />
@@ -185,7 +187,7 @@ export function AIScenarioInsights({ scenarioId, scenarioName }: AIScenarioInsig
             )}
 
             {/* Suggestions */}
-            {analysis.suggestions.length > 0 && (
+            {analysis.suggestions && analysis.suggestions.length > 0 && (
               <div className="pt-2 border-t border-border">
                 <div className="flex items-center gap-1 mb-2">
                   <Lightbulb className="w-3 h-3 text-primary" />
