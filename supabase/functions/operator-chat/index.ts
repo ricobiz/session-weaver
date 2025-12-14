@@ -82,10 +82,10 @@ serve(async (req) => {
 
   try {
     const { messages, model, context } = await req.json() as ChatRequest;
-    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
+    const OPENROUTER_API_KEY = Deno.env.get("OPENROUTER_API_KEY");
     
-    if (!LOVABLE_API_KEY) {
-      throw new Error("LOVABLE_API_KEY is not configured");
+    if (!OPENROUTER_API_KEY) {
+      throw new Error("OPENROUTER_API_KEY is not configured");
     }
 
     // Build context-aware system message
@@ -112,17 +112,21 @@ serve(async (req) => {
       }
     }
 
-    console.log("[operator-chat] Processing request with model:", model || "google/gemini-2.5-flash");
+    // Use user-selected model or default to a good OpenRouter model
+    const selectedModel = model || "anthropic/claude-3.5-sonnet";
+    console.log("[operator-chat] Processing request with model:", selectedModel);
     console.log("[operator-chat] Messages count:", messages.length);
 
-    const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+    const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${LOVABLE_API_KEY}`,
+        Authorization: `Bearer ${OPENROUTER_API_KEY}`,
         "Content-Type": "application/json",
+        "HTTP-Referer": "https://lovable.dev",
+        "X-Title": "Automation Operator",
       },
       body: JSON.stringify({
-        model: model || "google/gemini-2.5-flash",
+        model: selectedModel,
         messages: [
           { role: "system", content: systemMessage },
           ...messages,
