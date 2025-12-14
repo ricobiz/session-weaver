@@ -18,7 +18,9 @@ import { TaskList } from '@/components/TaskList';
 import { LiveSessionView } from '@/components/LiveSessionView';
 import { GeneratedScenarioPreview } from '@/components/GeneratedScenarioPreview';
 import { AISettingsPanel } from '@/components/AISettingsPanel';
-import { 
+import { OpenRouterBalance } from '@/components/OpenRouterBalance';
+import { RunnerStatus } from '@/components/RunnerStatus';
+import {
   useStats, 
   useProfiles, 
   useScenarios, 
@@ -558,10 +560,33 @@ const Index = () => {
             )}
 
             {rightPanelView === 'settings' && (
-              <AISettingsPanel
-                selectedModel={aiModel}
-                onModelChange={setAiModel}
-              />
+              <div className="space-y-4">
+                <OpenRouterBalance 
+                  refreshInterval={30000}
+                  lowBalanceThreshold={1.0}
+                  onLowBalance={(balance) => {
+                    toast({
+                      title: 'Low OpenRouter Balance',
+                      description: `Balance is $${balance.toFixed(4)}. Tasks may fail.`,
+                      variant: 'destructive',
+                    });
+                  }}
+                />
+                <RunnerStatus 
+                  refreshInterval={15000}
+                  onRunnerDisconnect={(runnerId) => {
+                    toast({
+                      title: 'Runner Disconnected',
+                      description: `Runner ${runnerId.slice(0, 12)}... lost connection. Sessions paused.`,
+                      variant: 'destructive',
+                    });
+                  }}
+                />
+                <AISettingsPanel
+                  selectedModel={aiModel}
+                  onModelChange={setAiModel}
+                />
+              </div>
             )}
           </div>
         </div>
