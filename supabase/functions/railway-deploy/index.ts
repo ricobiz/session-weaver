@@ -14,13 +14,21 @@ interface DeployRequest {
 
 const RAILWAY_API = 'https://backboard.railway.com/graphql/v2';
 
-async function railwayQuery(token: string, query: string, variables?: Record<string, any>) {
+// Try both token types - Account token uses Authorization, Team token uses Team-Access-Token
+async function railwayQuery(token: string, query: string, variables?: Record<string, any>, useTeamHeader = false) {
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+  };
+  
+  if (useTeamHeader) {
+    headers['Team-Access-Token'] = token;
+  } else {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+
   const response = await fetch(RAILWAY_API, {
     method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${token}`,
-      'Content-Type': 'application/json',
-    },
+    headers,
     body: JSON.stringify({ query, variables }),
   });
 
@@ -67,23 +75,29 @@ Deno.serve(async (req) => {
     // ========================================
     if (action === 'check') {
       try {
-        // Get user info and projects
-        const data = await railwayQuery(RAILWAY_API_TOKEN, `
-          query {
-            me {
-              id
-              email
-              name
-              projects {
-                edges {
-                  node {
-                    id
-                    name
-                    services {
-                      edges {
-                        node {
-                          id
-                          name
+        let data: any = null;
+        let tokenType = 'account';
+        let projects: any[] = [];
+
+        // First try as Account token
+        try {
+          data = await railwayQuery(RAILWAY_API_TOKEN, `
+            query {
+              me {
+                id
+                email
+                name
+                projects {
+                  edges {
+                    node {
+                      id
+                      name
+                      services {
+                        edges {
+                          node {
+                            id
+                            name
+                          }
                         }
                       }
                     }
@@ -91,21 +105,62 @@ Deno.serve(async (req) => {
                 }
               }
             }
+          `);
+          
+          console.log('Account token response:', JSON.stringify(data));
+          projects = (data.me?.projects?.edges || []).map((e: any) => ({
+            id: e.node.id,
+            name: e.node.name,
+            services: (e.node.services?.edges || []).map((s: any) => ({
+              id: s.node.id,
+              name: s.node.name,
+            })),
+          }));
+        } catch (e) {
+          console.log('Account token failed, trying Team token');
+        }
+
+        // If no projects found with Account token, try as Team token
+        if (projects.length === 0) {
+          try {
+            // Team tokens can't access "me" directly, try to list projects differently
+            const teamData = await railwayQuery(RAILWAY_API_TOKEN, `
+              query {
+                projects {
+                  edges {
+                    node {
+                      id
+                      name
+                      services {
+                        edges {
+                          node {
+                            id
+                            name
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            `, undefined, true);
+            
+            console.log('Team token response:', JSON.stringify(teamData));
+            tokenType = 'team';
+            projects = (teamData.projects?.edges || []).map((e: any) => ({
+              id: e.node.id,
+              name: e.node.name,
+              services: (e.node.services?.edges || []).map((s: any) => ({
+                id: s.node.id,
+                name: s.node.name,
+              })),
+            }));
+          } catch (e) {
+            console.log('Team token also failed:', e);
           }
-        `);
+        }
 
-        console.log('Full API response:', JSON.stringify(data));
-
-        const projects = (data.me?.projects?.edges || []).map((e: any) => ({
-          id: e.node.id,
-          name: e.node.name,
-          services: (e.node.services?.edges || []).map((s: any) => ({
-            id: s.node.id,
-            name: s.node.name,
-          })),
-        }));
-
-        console.log('Found projects:', projects.length);
+        console.log('Found projects:', projects.length, 'Token type:', tokenType);
 
         const runnerProject = projects.find((p: any) => 
           p.name.toLowerCase().includes('automation') || 
@@ -121,7 +176,8 @@ Deno.serve(async (req) => {
           JSON.stringify({
             success: true,
             connected: true,
-            user: { id: data.me?.id, email: data.me?.email, name: data.me?.name },
+            tokenType,
+            user: data?.me ? { id: data.me.id, email: data.me.email, name: data.me.name } : null,
             projects,
             existingRunner: runnerService ? {
               projectId: runnerProject.id,
