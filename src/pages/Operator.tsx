@@ -25,6 +25,10 @@ import {
   TrendingUp,
   Bot,
   Sparkles,
+  Wifi,
+  WifiOff,
+  Server,
+  CircleDot,
 } from 'lucide-react';
 import { OperatorBalanceHeader } from '@/components/operator/OperatorBalanceHeader';
 import { ActiveSessionsList } from '@/components/operator/ActiveSessionsList';
@@ -60,12 +64,39 @@ interface ActiveSession {
   current_action?: string;
 }
 
+interface RunnerHealth {
+  id: string;
+  runner_id: string;
+  last_heartbeat: string;
+  active_sessions: number;
+}
+
 const Operator = () => {
   const [command, setCommand] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
   const [statusMessage, setStatusMessage] = useState('');
   const [selectedModel, setSelectedModel] = useState('google/gemini-2.5-flash');
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
+
+  // Fetch runner health for system status
+  const { data: runners = [] } = useQuery({
+    queryKey: ['operator-runners'],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from('runner_health')
+        .select('*')
+        .order('last_heartbeat', { ascending: false });
+      return (data || []) as RunnerHealth[];
+    },
+    refetchInterval: 5000,
+  });
+
+  // Check if runners are online (heartbeat within last 30 seconds)
+  const onlineRunners = runners.filter(r => {
+    const lastBeat = new Date(r.last_heartbeat).getTime();
+    return Date.now() - lastBeat < 30000;
+  });
+  const systemOnline = onlineRunners.length > 0;
 
   // Fetch active tasks with aggregated progress
   const { data: activeTasks = [], refetch: refetchTasks } = useQuery({
@@ -157,6 +188,7 @@ const Operator = () => {
   const totalCompleted = activeTasks.reduce((acc, t) => acc + t.sessionsCompleted, 0);
   const totalFailed = activeTasks.reduce((acc, t) => acc + t.sessionsFailed, 0);
   const totalRunning = activeSessions.filter(s => s.status === 'running').length;
+  const totalQueued = activeSessions.filter(s => s.status === 'queued').length;
 
   const handleSubmit = async () => {
     if (!command.trim()) return;
@@ -255,25 +287,26 @@ const Operator = () => {
   };
 
   return (
-    <div className="min-h-screen bg-background flex flex-col">
-      {/* Header */}
-      <header className="sticky top-0 z-50 border-b border-border/40 bg-background/80 backdrop-blur-xl">
-        <div className="container mx-auto px-4 h-14 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="flex items-center gap-2">
-              <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-primary to-accent flex items-center justify-center">
-                <Bot className="w-4 h-4 text-primary-foreground" />
-              </div>
-              <span className="font-semibold text-lg">Operator</span>
+    <div className="min-h-screen bg-background flex flex-col overflow-x-hidden">
+      {/* Header - Fixed width, no overflow */}
+      <header className="sticky top-0 z-50 border-b border-border/40 bg-background/95 backdrop-blur-xl">
+        <div className="w-full max-w-[1400px] mx-auto px-4 h-14 flex items-center justify-between gap-4">
+          {/* Logo - Fixed width */}
+          <div className="flex items-center gap-2 flex-shrink-0">
+            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-primary to-accent flex items-center justify-center">
+              <Bot className="w-4 h-4 text-primary-foreground" />
             </div>
+            <span className="font-semibold text-base sm:text-lg">Operator</span>
           </div>
-          <div className="flex items-center gap-2">
+          
+          {/* Right Side - Flexible with overflow hidden */}
+          <div className="flex items-center gap-2 flex-shrink-0">
             <OperatorBalanceHeader 
               selectedModel={selectedModel}
               onModelChange={setSelectedModel}
             />
-            <Separator orientation="vertical" className="h-6 mx-1" />
-            <Button variant="ghost" size="sm" asChild className="gap-1.5 text-muted-foreground hover:text-foreground">
+            <Separator orientation="vertical" className="h-6 hidden sm:block" />
+            <Button variant="ghost" size="sm" asChild className="gap-1.5 text-muted-foreground hover:text-foreground px-2 sm:px-3">
               <Link to="/dashboard">
                 <Code2 className="h-4 w-4" />
                 <span className="hidden sm:inline">Developer</span>
@@ -283,251 +316,301 @@ const Operator = () => {
         </div>
       </header>
 
-      {/* Main Content */}
-      <main className="flex-1 container mx-auto px-4 py-6">
-        <div className="max-w-6xl mx-auto">
-          {/* Command Section */}
-          <div className="mb-8">
-            <Card className="overflow-hidden border-border/50 bg-card/50 backdrop-blur">
-              <CardContent className="p-0">
-                {/* Input Area */}
-                <div className="p-4">
-                  <div className="flex items-start gap-3">
-                    <div className="w-10 h-10 rounded-full bg-gradient-to-br from-primary/20 to-accent/20 flex items-center justify-center flex-shrink-0">
-                      <Sparkles className="w-5 h-5 text-primary" />
+      {/* System Status Banner */}
+      <div className="border-b border-border/30 bg-card/30">
+        <div className="w-full max-w-[1400px] mx-auto px-4 py-2">
+          <div className="flex items-center justify-between flex-wrap gap-2">
+            {/* System Status */}
+            <div className="flex items-center gap-4">
+              <div className="flex items-center gap-2">
+                {systemOnline ? (
+                  <>
+                    <div className="relative">
+                      <Wifi className="w-4 h-4 text-success" />
+                      <div className="absolute -top-0.5 -right-0.5 w-2 h-2 bg-success rounded-full animate-pulse" />
                     </div>
-                    <div className="flex-1">
-                      <Textarea
-                        value={command}
-                        onChange={(e) => setCommand(e.target.value)}
-                        placeholder="What needs to be done? Example: Play this Spotify track with 5 profiles https://open.spotify.com/track/..."
-                        className="min-h-[60px] resize-none border-0 bg-transparent focus-visible:ring-0 text-base p-0 placeholder:text-muted-foreground/60"
-                        disabled={isProcessing}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) handleSubmit();
-                        }}
-                      />
-                      {statusMessage && (
-                        <p className="text-sm text-primary mt-2 flex items-center gap-2">
-                          <Loader2 className="w-3 h-3 animate-spin" />
-                          {statusMessage}
-                        </p>
-                      )}
-                    </div>
-                  </div>
-                </div>
-                
-                {/* Action Bar */}
-                <div className="px-4 py-3 bg-muted/30 border-t border-border/50 flex items-center justify-between">
-                  <span className="text-xs text-muted-foreground hidden sm:block">
-                    ⌘/Ctrl + Enter to run
-                  </span>
-                  <div className="flex items-center gap-2 ml-auto">
-                    <Button 
-                      onClick={handleSubmit} 
-                      disabled={isProcessing || !command.trim()}
-                      className="gap-2 min-w-[100px]"
-                    >
-                      {isProcessing ? (
-                        <>
-                          <Loader2 className="w-4 h-4 animate-spin" />
-                          Planning...
-                        </>
-                      ) : (
-                        <>
-                          <Send className="w-4 h-4" />
-                          Run
-                        </>
-                      )}
-                    </Button>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-
-          {/* Stats Row */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
-            <Card className="bg-card/50 border-border/50">
-              <CardContent className="p-4">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
-                    <Zap className="w-5 h-5 text-primary" />
-                  </div>
-                  <div>
-                    <div className="text-2xl font-bold">{totalRunning}</div>
-                    <div className="text-xs text-muted-foreground">Running Now</div>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-            <Card className="bg-card/50 border-border/50">
-              <CardContent className="p-4">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-lg bg-accent/10 flex items-center justify-center">
-                    <Target className="w-5 h-5 text-accent" />
-                  </div>
-                  <div>
-                    <div className="text-2xl font-bold">{totalActive}</div>
-                    <div className="text-xs text-muted-foreground">Active Tasks</div>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-            <Card className="bg-card/50 border-border/50">
-              <CardContent className="p-4">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-lg bg-success/10 flex items-center justify-center">
-                    <TrendingUp className="w-5 h-5 text-success" />
-                  </div>
-                  <div>
-                    <div className="text-2xl font-bold">{totalCompleted}</div>
-                    <div className="text-xs text-muted-foreground">Completed</div>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-            <Card className="bg-card/50 border-border/50">
-              <CardContent className="p-4">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-lg bg-destructive/10 flex items-center justify-center">
-                    <XCircle className="w-5 h-5 text-destructive" />
-                  </div>
-                  <div>
-                    <div className="text-2xl font-bold">{totalFailed}</div>
-                    <div className="text-xs text-muted-foreground">Failed</div>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-
-          {/* Main Grid: Tasks + Sessions */}
-          <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
-            {/* Tasks Column */}
-            <div className="lg:col-span-3 space-y-4">
-              <div className="flex items-center justify-between">
-                <h2 className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-                  <Activity className="w-4 h-4" />
-                  Active Tasks
-                </h2>
-                {activeTasks.length > 0 && (
-                  <Badge variant="secondary" className="text-xs">
-                    {activeTasks.length}
-                  </Badge>
+                    <span className="text-xs font-medium text-success">System Online</span>
+                  </>
+                ) : (
+                  <>
+                    <WifiOff className="w-4 h-4 text-destructive" />
+                    <span className="text-xs font-medium text-destructive">Offline</span>
+                  </>
                 )}
               </div>
+              
+              {/* Workers Count */}
+              <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                <Server className="w-3.5 h-3.5" />
+                <span>{onlineRunners.length} worker{onlineRunners.length !== 1 ? 's' : ''}</span>
+              </div>
+            </div>
 
-              {activeTasks.length > 0 ? (
-                <div className="space-y-3">
-                  {activeTasks.map((task) => (
-                    <Card key={task.id} className="overflow-hidden bg-card/50 border-border/50 hover:border-border transition-colors">
-                      <CardContent className="p-4">
-                        <div className="flex items-start justify-between mb-3">
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2 mb-1">
-                              {task.status === 'active' ? (
-                                <Activity className="w-4 h-4 text-primary animate-pulse flex-shrink-0" />
-                              ) : (
-                                <Clock className="w-4 h-4 text-muted-foreground flex-shrink-0" />
-                              )}
-                              <span className="font-medium truncate">{task.name}</span>
-                            </div>
-                            <div className="flex items-center gap-3 text-xs text-muted-foreground">
-                              <span className="flex items-center gap-1">
-                                <div className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
-                                {task.sessionsRunning} working
-                              </span>
-                              <span className="flex items-center gap-1">
-                                <CheckCircle2 className="w-3 h-3 text-success" />
-                                {task.sessionsCompleted}
-                              </span>
-                              <span className="flex items-center gap-1">
-                                <XCircle className="w-3 h-3 text-destructive" />
-                                {task.sessionsFailed}
-                              </span>
-                              <span>/ {task.sessionsTotal} total</span>
-                            </div>
-                          </div>
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => handleStop(task.id)}
-                            className="h-8 w-8 p-0 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
-                          >
-                            <Square className="w-4 h-4" />
-                          </Button>
-                        </div>
-                        
-                        <div className="space-y-1">
-                          <Progress value={task.progress} className="h-2" />
-                          <div className="flex items-center justify-between text-xs text-muted-foreground">
-                            <span>{task.progress}% complete</span>
-                            {task.startedAt && (
-                              <span>{new Date(task.startedAt).toLocaleTimeString()}</span>
-                            )}
-                          </div>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  ))}
+            {/* Live Activity Indicators */}
+            <div className="flex items-center gap-3">
+              {totalRunning > 0 && (
+                <div className="flex items-center gap-1.5 px-2 py-1 rounded-full bg-primary/10 border border-primary/20">
+                  <div className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
+                  <span className="text-xs font-medium text-primary">{totalRunning} running</span>
                 </div>
-              ) : (
-                <Card className="bg-card/30 border-dashed">
-                  <CardContent className="py-12 text-center">
-                    <div className="w-12 h-12 rounded-full bg-muted/50 flex items-center justify-center mx-auto mb-4">
-                      <Target className="w-6 h-6 text-muted-foreground" />
-                    </div>
-                    <p className="text-muted-foreground text-sm">No active tasks</p>
-                    <p className="text-muted-foreground/60 text-xs mt-1">Describe what you need above</p>
-                  </CardContent>
-                </Card>
+              )}
+              {totalQueued > 0 && (
+                <div className="flex items-center gap-1.5 px-2 py-1 rounded-full bg-muted/50 border border-border/50">
+                  <Clock className="w-3 h-3 text-muted-foreground" />
+                  <span className="text-xs text-muted-foreground">{totalQueued} queued</span>
+                </div>
+              )}
+              {totalRunning === 0 && totalQueued === 0 && (
+                <span className="text-xs text-muted-foreground">Idle</span>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Main Content */}
+      <main className="flex-1 w-full max-w-[1400px] mx-auto px-4 py-6">
+        {/* Command Section */}
+        <div className="mb-6">
+          <Card className="overflow-hidden border-border/50 bg-card/50">
+            <CardContent className="p-0">
+              {/* Input Area */}
+              <div className="p-4">
+                <div className="flex items-start gap-3">
+                  <div className="w-9 h-9 rounded-full bg-gradient-to-br from-primary/20 to-accent/20 flex items-center justify-center flex-shrink-0">
+                    <Sparkles className="w-4 h-4 text-primary" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <Textarea
+                      value={command}
+                      onChange={(e) => setCommand(e.target.value)}
+                      placeholder="What needs to be done? Example: Play Spotify track with 5 profiles"
+                      className="min-h-[50px] resize-none border-0 bg-transparent focus-visible:ring-0 text-sm sm:text-base p-0 placeholder:text-muted-foreground/50"
+                      disabled={isProcessing}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) handleSubmit();
+                      }}
+                    />
+                    {statusMessage && (
+                      <p className="text-sm text-primary mt-2 flex items-center gap-2">
+                        <Loader2 className="w-3 h-3 animate-spin" />
+                        {statusMessage}
+                      </p>
+                    )}
+                  </div>
+                </div>
+              </div>
+              
+              {/* Action Bar */}
+              <div className="px-4 py-2.5 bg-muted/20 border-t border-border/30 flex items-center justify-between">
+                <span className="text-[10px] sm:text-xs text-muted-foreground/70">
+                  ⌘/Ctrl + Enter
+                </span>
+                <Button 
+                  onClick={handleSubmit} 
+                  disabled={isProcessing || !command.trim()}
+                  size="sm"
+                  className="gap-2"
+                >
+                  {isProcessing ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Send className="w-4 h-4" />
+                  )}
+                  <span className="hidden sm:inline">{isProcessing ? 'Planning...' : 'Run'}</span>
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Stats Row */}
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
+          <Card className="bg-card/50 border-border/40">
+            <CardContent className="p-3 sm:p-4">
+              <div className="flex items-center gap-2 sm:gap-3">
+                <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0">
+                  <Zap className="w-4 h-4 sm:w-5 sm:h-5 text-primary" />
+                </div>
+                <div className="min-w-0">
+                  <div className="text-xl sm:text-2xl font-bold tabular-nums">{totalRunning}</div>
+                  <div className="text-[10px] sm:text-xs text-muted-foreground truncate">Running</div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+          <Card className="bg-card/50 border-border/40">
+            <CardContent className="p-3 sm:p-4">
+              <div className="flex items-center gap-2 sm:gap-3">
+                <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-lg bg-accent/10 flex items-center justify-center flex-shrink-0">
+                  <Target className="w-4 h-4 sm:w-5 sm:h-5 text-accent" />
+                </div>
+                <div className="min-w-0">
+                  <div className="text-xl sm:text-2xl font-bold tabular-nums">{totalActive}</div>
+                  <div className="text-[10px] sm:text-xs text-muted-foreground truncate">Tasks</div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+          <Card className="bg-card/50 border-border/40">
+            <CardContent className="p-3 sm:p-4">
+              <div className="flex items-center gap-2 sm:gap-3">
+                <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-lg bg-success/10 flex items-center justify-center flex-shrink-0">
+                  <TrendingUp className="w-4 h-4 sm:w-5 sm:h-5 text-success" />
+                </div>
+                <div className="min-w-0">
+                  <div className="text-xl sm:text-2xl font-bold tabular-nums">{totalCompleted}</div>
+                  <div className="text-[10px] sm:text-xs text-muted-foreground truncate">Done</div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+          <Card className="bg-card/50 border-border/40">
+            <CardContent className="p-3 sm:p-4">
+              <div className="flex items-center gap-2 sm:gap-3">
+                <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-lg bg-destructive/10 flex items-center justify-center flex-shrink-0">
+                  <XCircle className="w-4 h-4 sm:w-5 sm:h-5 text-destructive" />
+                </div>
+                <div className="min-w-0">
+                  <div className="text-xl sm:text-2xl font-bold tabular-nums">{totalFailed}</div>
+                  <div className="text-[10px] sm:text-xs text-muted-foreground truncate">Failed</div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Main Grid: Tasks + Sessions */}
+        <div className="grid grid-cols-1 lg:grid-cols-5 gap-4 sm:gap-6">
+          {/* Tasks Column */}
+          <div className="lg:col-span-3 space-y-4">
+            <div className="flex items-center justify-between">
+              <h2 className="text-sm font-medium text-muted-foreground flex items-center gap-2">
+                <Activity className="w-4 h-4" />
+                Active Tasks
+              </h2>
+              {activeTasks.length > 0 && (
+                <Badge variant="secondary" className="text-[10px]">
+                  {activeTasks.length}
+                </Badge>
               )}
             </div>
 
-            {/* Sessions Column */}
-            <div className="lg:col-span-2 space-y-4">
-              <div className="flex items-center justify-between">
-                <h2 className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-                  <MonitorPlay className="w-4 h-4" />
-                  Workers
-                </h2>
-                {activeSessions.length > 0 && (
-                  <Badge variant="secondary" className="text-xs">
-                    {activeSessions.filter(s => s.status === 'running').length} active
-                  </Badge>
-                )}
+            {activeTasks.length > 0 ? (
+              <div className="space-y-3">
+                {activeTasks.map((task) => (
+                  <Card key={task.id} className="overflow-hidden bg-card/50 border-border/40">
+                    <CardContent className="p-3 sm:p-4">
+                      <div className="flex items-start justify-between gap-2 mb-3">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 mb-1">
+                            {task.status === 'active' ? (
+                              <div className="relative flex-shrink-0">
+                                <Activity className="w-4 h-4 text-primary" />
+                                <div className="absolute -top-0.5 -right-0.5 w-2 h-2 bg-primary rounded-full animate-pulse" />
+                              </div>
+                            ) : (
+                              <Clock className="w-4 h-4 text-muted-foreground flex-shrink-0" />
+                            )}
+                            <span className="font-medium text-sm truncate">{task.name}</span>
+                          </div>
+                          <div className="flex items-center gap-2 sm:gap-3 text-[10px] sm:text-xs text-muted-foreground flex-wrap">
+                            {task.sessionsRunning > 0 && (
+                              <span className="flex items-center gap-1 text-primary">
+                                <CircleDot className="w-3 h-3 animate-pulse" />
+                                {task.sessionsRunning}
+                              </span>
+                            )}
+                            <span className="flex items-center gap-1">
+                              <CheckCircle2 className="w-3 h-3 text-success" />
+                              {task.sessionsCompleted}
+                            </span>
+                            <span className="flex items-center gap-1">
+                              <XCircle className="w-3 h-3 text-destructive" />
+                              {task.sessionsFailed}
+                            </span>
+                            <span className="text-muted-foreground/60">/ {task.sessionsTotal}</span>
+                          </div>
+                        </div>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => handleStop(task.id)}
+                          className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive hover:bg-destructive/10 flex-shrink-0"
+                        >
+                          <Square className="w-3.5 h-3.5" />
+                        </Button>
+                      </div>
+                      
+                      <div className="space-y-1">
+                        <Progress value={task.progress} className="h-1.5" />
+                        <div className="flex items-center justify-between text-[10px] text-muted-foreground">
+                          <span>{task.progress}%</span>
+                          {task.startedAt && (
+                            <span>{new Date(task.startedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                          )}
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
               </div>
-
-              <Card className="bg-card/50 border-border/50">
-                <CardContent className="p-0">
-                  <ScrollArea className="h-[400px]">
-                    <div className="p-3">
-                      <ActiveSessionsList 
-                        sessions={activeSessions}
-                        onSessionClick={setSelectedSessionId}
-                        selectedSessionId={selectedSessionId || undefined}
-                      />
-                    </div>
-                  </ScrollArea>
+            ) : (
+              <Card className="bg-card/30 border-dashed border-border/40">
+                <CardContent className="py-10 text-center">
+                  <div className="w-10 h-10 rounded-full bg-muted/30 flex items-center justify-center mx-auto mb-3">
+                    <Target className="w-5 h-5 text-muted-foreground/50" />
+                  </div>
+                  <p className="text-sm text-muted-foreground">No active tasks</p>
+                  <p className="text-xs text-muted-foreground/50 mt-1">Describe what you need above</p>
                 </CardContent>
               </Card>
+            )}
+          </div>
 
-              {/* Session Detail Panel */}
-              {selectedSession && (
-                <SessionDetailPanel 
-                  session={selectedSession}
-                  onClose={() => setSelectedSessionId(null)}
-                  onRefresh={() => refetchSessions()}
-                />
+          {/* Sessions Column */}
+          <div className="lg:col-span-2 space-y-4">
+            <div className="flex items-center justify-between">
+              <h2 className="text-sm font-medium text-muted-foreground flex items-center gap-2">
+                <MonitorPlay className="w-4 h-4" />
+                Workers
+              </h2>
+              {activeSessions.filter(s => s.status === 'running').length > 0 && (
+                <Badge variant="secondary" className="text-[10px] gap-1">
+                  <div className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
+                  {activeSessions.filter(s => s.status === 'running').length}
+                </Badge>
               )}
             </div>
+
+            <Card className="bg-card/50 border-border/40">
+              <CardContent className="p-0">
+                <ScrollArea className="h-[350px] sm:h-[400px]">
+                  <div className="p-3">
+                    <ActiveSessionsList 
+                      sessions={activeSessions}
+                      onSessionClick={setSelectedSessionId}
+                      selectedSessionId={selectedSessionId || undefined}
+                    />
+                  </div>
+                </ScrollArea>
+              </CardContent>
+            </Card>
+
+            {/* Session Detail Panel */}
+            {selectedSession && (
+              <SessionDetailPanel 
+                session={selectedSession}
+                onClose={() => setSelectedSessionId(null)}
+                onRefresh={() => refetchSessions()}
+              />
+            )}
           </div>
         </div>
       </main>
 
       {/* Footer */}
-      <footer className="py-3 text-center text-xs text-muted-foreground/60 border-t border-border/30">
+      <footer className="py-3 text-center text-[10px] sm:text-xs text-muted-foreground/50 border-t border-border/20">
         Auto-scheduling • Auto-retry • Captcha handling • Session recovery
       </footer>
     </div>
