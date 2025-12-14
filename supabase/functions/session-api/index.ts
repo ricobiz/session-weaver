@@ -85,8 +85,11 @@ serve(async (req) => {
             id,
             profile_id,
             scenario_id,
-            profiles (id, name, email, storage_state, network_config, session_context),
-            scenarios (id, name, steps)
+            task_id,
+            metadata,
+            profiles (id, name, email, storage_state, network_config, session_context, proxy_url, user_agent, fingerprint),
+            scenarios (id, name, steps),
+            tasks (id, name, target_platform, goal_type, target_url, search_query, description, behavior_config)
           )
         `)
         .is('claimed_by', null)
@@ -109,6 +112,8 @@ serve(async (req) => {
         .eq('id', job.id);
 
       const sessionData = job.sessions as any;
+      const metadata = sessionData?.metadata || {};
+      const isAutonomous = metadata.autonomous_mode === true;
       const steps = sessionData?.scenarios?.steps;
       
       // Update session status
@@ -118,7 +123,7 @@ serve(async (req) => {
           status: 'running', 
           runner_id: runnerId,
           started_at: new Date().toISOString(),
-          total_steps: Array.isArray(steps) ? steps.length : 0
+          total_steps: isAutonomous ? 0 : (Array.isArray(steps) ? steps.length : 0)
         })
         .eq('id', job.session_id);
 
@@ -129,11 +134,26 @@ serve(async (req) => {
         ? Math.floor(Math.random() * (maxDelay - minDelay) + minDelay)
         : minDelay;
 
-      return new Response(JSON.stringify({ 
+      // Build response with execution mode info
+      const response: any = { 
         job_id: job.id,
         session: job.sessions,
-        delay_before_start_ms: delay
-      }), {
+        delay_before_start_ms: delay,
+        execution_mode: isAutonomous ? 'autonomous' : 'scenario',
+      };
+
+      // For autonomous mode, include goal and agent endpoint
+      if (isAutonomous) {
+        response.autonomous = {
+          goal: metadata.goal,
+          task_id: sessionData?.task_id,
+          agent_endpoint: '/functions/v1/agent-executor',
+        };
+      }
+
+      console.log(`[session-api] Job claimed: ${job.id} (${isAutonomous ? 'autonomous' : 'scenario'} mode)`);
+
+      return new Response(JSON.stringify(response), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
@@ -661,7 +681,11 @@ serve(async (req) => {
         });
       }
 
-      if (!task.generated_scenario_id) {
+      const behaviorConfig = task.behavior_config as any || {};
+      const isAutonomous = behaviorConfig.execution_mode === 'autonomous';
+
+      // For non-autonomous mode, require a scenario
+      if (!isAutonomous && !task.generated_scenario_id) {
         return new Response(JSON.stringify({ error: 'Task has no generated scenario' }), {
           status: 400,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -676,16 +700,30 @@ serve(async (req) => {
         });
       }
 
+      // Build goal string for autonomous mode
+      const goalParts: string[] = [];
+      goalParts.push(`Platform: ${task.target_platform}`);
+      goalParts.push(`Action: ${task.goal_type}`);
+      if (task.target_url) goalParts.push(`Target URL: ${task.target_url}`);
+      if (task.search_query) goalParts.push(`Search: ${task.search_query}`);
+      if (task.description) goalParts.push(`Details: ${task.description}`);
+      const goal = goalParts.join('. ');
+
       // Create sessions for each profile × run_count
       const sessions = [];
       for (const profileId of profileIds) {
         for (let i = 0; i < (task.run_count || 1); i++) {
           sessions.push({
             profile_id: profileId,
-            scenario_id: task.generated_scenario_id,
+            scenario_id: isAutonomous ? null : task.generated_scenario_id,
             task_id: taskId,
             status: 'queued',
             profile_state: 'unknown',
+            metadata: isAutonomous ? {
+              autonomous_mode: true,
+              goal,
+              task_id: taskId
+            } : {},
           });
         }
       }
@@ -721,9 +759,12 @@ serve(async (req) => {
         })
         .eq('id', taskId);
 
+      console.log(`[session-api] Started task ${taskId} in ${isAutonomous ? 'autonomous' : 'scenario'} mode with ${createdSessions!.length} sessions`);
+
       return new Response(JSON.stringify({
         created: createdSessions!.length,
         sessions: createdSessions,
+        execution_mode: isAutonomous ? 'autonomous' : 'scenario',
       }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
