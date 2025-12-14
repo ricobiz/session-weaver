@@ -3,6 +3,7 @@ import { chromium, Browser, BrowserContext, Page } from 'playwright';
 import { log } from './logger';
 import { applyStealthPatches } from './stealth';
 import { generateFingerprint, getRandomPreset } from './stealth/fingerprint';
+import { humanType, humanClick, humanScroll, randomDelay } from './stealth/human-behavior';
 
 interface ExecuteRequest {
   action: 'screenshot' | 'navigate' | 'click' | 'type' | 'scroll' | 'evaluate';
@@ -12,6 +13,9 @@ interface ExecuteRequest {
   coordinates?: { x: number; y: number };
   script?: string;
   timeout?: number;
+  speed?: 'slow' | 'normal' | 'fast';
+  clear_first?: boolean;
+  press_enter?: boolean;
 }
 
 interface ExecuteResponse {
@@ -117,15 +121,27 @@ async function executeAction(req: ExecuteRequest): Promise<ExecuteResponse> {
       case 'click': {
         if (req.coordinates) {
           logAction(`Clicking at coordinates: (${req.coordinates.x}, ${req.coordinates.y})`);
-          await page.mouse.click(req.coordinates.x, req.coordinates.y);
+          // Use human-like click with mouse movement
+          await humanClick(page, req.coordinates.x, req.coordinates.y);
         } else if (req.selector) {
           logAction(`Clicking selector: ${req.selector}`);
-          await page.click(req.selector, { timeout });
+          // Get element position and use human-like click
+          const element = await page.waitForSelector(req.selector, { timeout });
+          if (element) {
+            const box = await element.boundingBox();
+            if (box) {
+              const clickX = box.x + box.width * (0.3 + Math.random() * 0.4);
+              const clickY = box.y + box.height * (0.3 + Math.random() * 0.4);
+              await humanClick(page, clickX, clickY);
+            } else {
+              await element.click();
+            }
+          }
         } else {
           throw new Error('Selector or coordinates required for click');
         }
         
-        await page.waitForTimeout(500);
+        await randomDelay(300, 600);
         const screenshot = await page.screenshot({ type: 'png' });
         return {
           success: true,
@@ -137,12 +153,49 @@ async function executeAction(req: ExecuteRequest): Promise<ExecuteResponse> {
 
       case 'type': {
         if (!req.text) throw new Error('Text required for type');
-        logAction(`Typing: "${req.text.slice(0, 50)}${req.text.length > 50 ? '...' : ''}"`);
+        const speed = req.speed || 'normal';
+        const clearFirst = req.clear_first !== false;
+        const pressEnter = req.press_enter === true;
         
+        logAction(`Typing: "${req.text.slice(0, 50)}${req.text.length > 50 ? '...' : ''}" (speed=${speed})`);
+        
+        // Click on selector first if provided
         if (req.selector) {
-          await page.click(req.selector, { timeout });
+          const element = await page.waitForSelector(req.selector, { timeout });
+          if (element) {
+            const box = await element.boundingBox();
+            if (box) {
+              const clickX = box.x + box.width * (0.3 + Math.random() * 0.4);
+              const clickY = box.y + box.height * (0.3 + Math.random() * 0.4);
+              await humanClick(page, clickX, clickY);
+            } else {
+              await element.click();
+            }
+            await randomDelay(100, 200);
+          }
         }
-        await page.keyboard.type(req.text, { delay: 50 });
+        
+        // Clear existing text if requested
+        if (clearFirst) {
+          await page.keyboard.press('Control+a');
+          await randomDelay(30, 80);
+          await page.keyboard.press('Backspace');
+          await randomDelay(50, 100);
+        }
+        
+        // Use human-like typing with variable delays
+        await humanType(page, req.text, { 
+          typingSpeed: speed,
+          typingMistakes: false, // Disabled for reliability
+          randomDelays: true,
+        });
+        
+        // Press Enter if requested
+        if (pressEnter) {
+          await randomDelay(100, 200);
+          await page.keyboard.press('Enter');
+          logAction('Pressed Enter');
+        }
         
         const screenshot = await page.screenshot({ type: 'png' });
         return {
@@ -155,10 +208,13 @@ async function executeAction(req: ExecuteRequest): Promise<ExecuteResponse> {
 
       case 'scroll': {
         const amount = req.coordinates?.y || 500;
-        logAction(`Scrolling: ${amount}px`);
-        await page.mouse.wheel(0, amount);
-        await page.waitForTimeout(300);
+        const direction = amount > 0 ? 'down' : 'up';
+        logAction(`Scrolling ${direction}: ${Math.abs(amount)}px`);
         
+        // Use human-like scrolling
+        await humanScroll(page, direction, Math.abs(amount));
+        
+        await randomDelay(200, 400);
         const screenshot = await page.screenshot({ type: 'png' });
         return {
           success: true,

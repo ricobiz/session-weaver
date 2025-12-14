@@ -159,6 +159,105 @@ serve(async (req) => {
       });
     }
 
+    // POST /test-typing - Test human-like typing on Google search
+    if (req.method === 'POST' && path === '/test-typing') {
+      const { text, speed } = await req.json();
+      const testText = text || 'Hello world test';
+      const typingSpeed = speed || 'normal';
+      
+      console.log(`[runner-test] Testing human-like typing: "${testText}" with speed=${typingSpeed}`);
+      
+      const results: any[] = [];
+      
+      // Step 1: Navigate to Google
+      const navResult = await fetch(`${RUNNER_API_URL}/execute`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'navigate', url: 'https://www.google.com' }),
+      }).then(r => r.json());
+      
+      results.push({ step: 'navigate', success: navResult.success, url: navResult.currentUrl });
+      
+      if (!navResult.success) {
+        return new Response(JSON.stringify({ 
+          success: false, 
+          error: 'Navigation failed',
+          results 
+        }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+      
+      // Wait for page to load
+      await new Promise(r => setTimeout(r, 1000));
+      
+      // Step 2: Type into search box with human-like behavior
+      const startTime = Date.now();
+      
+      const typeResult = await fetch(`${RUNNER_API_URL}/execute`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          action: 'type', 
+          text: testText,
+          selector: 'textarea[name="q"], input[name="q"]', // Google search input
+          speed: typingSpeed,
+          clear_first: true,
+          press_enter: false // Don't submit yet
+        }),
+      }).then(r => r.json());
+      
+      const typingDuration = Date.now() - startTime;
+      
+      results.push({ 
+        step: 'type', 
+        success: typeResult.success, 
+        data: typeResult.data,
+        typing_duration_ms: typingDuration
+      });
+      
+      // Step 3: Take final screenshot
+      const screenshotResult = await fetch(`${RUNNER_API_URL}/execute`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'screenshot' }),
+      }).then(r => r.json());
+      
+      // Calculate typing metrics
+      const charsPerSecond = testText.length / (typingDuration / 1000);
+      const avgDelayMs = typingDuration / testText.length;
+      
+      // Human typing speed reference:
+      // Slow: ~30-40 WPM = ~2.5-3.3 chars/sec
+      // Normal: ~40-60 WPM = ~3.3-5 chars/sec  
+      // Fast: ~60-80 WPM = ~5-6.7 chars/sec
+      // Very fast: 80+ WPM = 6.7+ chars/sec
+      
+      let humanLikeAssessment = 'too_fast';
+      if (charsPerSecond < 3) humanLikeAssessment = 'slow_human';
+      else if (charsPerSecond < 5) humanLikeAssessment = 'normal_human';
+      else if (charsPerSecond < 7) humanLikeAssessment = 'fast_human';
+      else if (charsPerSecond < 10) humanLikeAssessment = 'very_fast_human';
+      else humanLikeAssessment = 'suspicious_speed';
+      
+      return new Response(JSON.stringify({
+        success: typeResult.success,
+        text_typed: testText,
+        speed_setting: typingSpeed,
+        typing_metrics: {
+          duration_ms: typingDuration,
+          chars_per_second: charsPerSecond.toFixed(2),
+          avg_delay_per_char_ms: avgDelayMs.toFixed(1),
+          human_like_assessment: humanLikeAssessment,
+        },
+        results,
+        screenshot: screenshotResult.screenshot,
+        current_url: screenshotResult.currentUrl
+      }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
     // POST /test-vision - Test vision model with a screenshot
     if (req.method === 'POST' && path === '/test-vision') {
       const OPENROUTER_API_KEY = Deno.env.get('OPENROUTER_API_KEY');
