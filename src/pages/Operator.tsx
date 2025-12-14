@@ -157,6 +157,7 @@ const Operator = () => {
     setStatusMessage('Understanding your request...');
 
     try {
+      // Parse command to extract parameters
       const lowerCommand = command.toLowerCase();
       
       let platform = 'web';
@@ -165,100 +166,66 @@ const Operator = () => {
       else if (lowerCommand.includes('soundcloud')) platform = 'soundcloud';
       else if (lowerCommand.includes('tiktok')) platform = 'tiktok';
       
-      let goalType = 'play';
-      if (lowerCommand.includes('like')) goalType = 'like';
-      else if (lowerCommand.includes('follow')) goalType = 'follow';
-      else if (lowerCommand.includes('comment')) goalType = 'comment';
-      else if (lowerCommand.includes('share')) goalType = 'share';
-      
+      // Extract URL
       const urlMatch = command.match(/https?:\/\/[^\s]+/);
       const targetUrl = urlMatch ? urlMatch[0] : null;
       
-      const searchMatch = command.match(/search\s+(?:for\s+)?["']?([^"']+)["']?/i) ||
-                          command.match(/find\s+["']?([^"']+)["']?/i);
-      const searchQuery = searchMatch ? searchMatch[1].trim() : null;
-      
+      // Extract profile and run counts
       const profileMatch = command.match(/(\d+)\s*(?:profiles?|accounts?|users?)/i);
       const runMatch = command.match(/(\d+)\s*(?:times?|runs?|x)/i);
       const profileCount = profileMatch ? parseInt(profileMatch[1]) : 3;
       const runCount = runMatch ? parseInt(runMatch[1]) : 1;
 
-      setStatusMessage('Creating task...');
+      setStatusMessage('AI is planning the scenario...');
 
-      const { data: profiles } = await supabase
-        .from('profiles')
-        .select('id')
-        .limit(profileCount);
-      
-      const profileIds = profiles?.map(p => p.id) || [];
-      
-      if (profileIds.length === 0) {
-        toast({ title: 'No profiles available', variant: 'destructive' });
-        setStatusMessage('No profiles available. Add profiles first.');
-        setIsProcessing(false);
-        return;
-      }
-
-      const { data: task, error } = await supabase
-        .from('tasks')
-        .insert({
-          name: command.slice(0, 100),
-          target_platform: platform,
-          goal_type: goalType,
-          target_url: targetUrl,
-          search_query: searchQuery,
-          entry_method: targetUrl ? 'url' : 'search',
-          profile_ids: profileIds,
-          run_count: runCount,
-          status: 'pending',
-          behavior_config: {
-            min_watch_percent: 70,
-            max_watch_percent: 100,
-            human_behavior: true,
-            model: selectedModel, // Store selected model
+      // Call the Planner API to generate and execute
+      const response = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/session-api/planner/execute`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
           },
-        })
-        .select()
-        .single();
-
-      if (error) throw error;
-
-      setStatusMessage('Starting execution...');
-
-      const totalSessions = profileIds.length * runCount;
-      for (let run = 0; run < runCount; run++) {
-        for (const profileId of profileIds) {
-          await supabase.from('sessions').insert({
-            task_id: task.id,
-            profile_id: profileId,
-            status: 'queued',
-            metadata: { run_index: run },
-          });
+          body: JSON.stringify({
+            goal: command,
+            platform,
+            input: targetUrl,
+            model: selectedModel,
+            profile_count: profileCount,
+            run_count: runCount,
+            constraints: {
+              min_watch_percent: 70,
+              max_watch_percent: 100,
+              human_behavior: true,
+            },
+          }),
         }
+      );
+
+      const result = await response.json();
+
+      if (!response.ok || result.error) {
+        throw new Error(result.error || 'Planning failed');
       }
 
-      await supabase
-        .from('tasks')
-        .update({ 
-          status: 'active', 
-          started_at: new Date().toISOString(),
-          sessions_created: totalSessions,
-        })
-        .eq('id', task.id);
-
-      setStatusMessage(`Running: ${totalSessions} sessions queued`);
+      setStatusMessage(`Running: ${result.sessions_created} sessions with AI-generated plan`);
       setCommand('');
       refetchTasks();
+      refetchSessions();
       
       toast({ 
         title: 'Task started', 
-        description: `${totalSessions} sessions queued for execution.` 
+        description: `${result.sessions_created} sessions queued. ETA: ${Math.round((result.estimated_duration_seconds || 60) / 60)} min` 
       });
 
     } catch (error) {
       console.error('Task creation failed:', error);
-      setStatusMessage('Failed to create task. Try again.');
-      toast({ title: 'Error', description: 'Failed to process command.', variant: 'destructive' });
+      setStatusMessage('Failed to plan task. Try again.');
+      toast({ 
+        title: 'Planning failed', 
+        description: error instanceof Error ? error.message : 'Unknown error',
+        variant: 'destructive' 
+      });
     } finally {
       setIsProcessing(false);
     }

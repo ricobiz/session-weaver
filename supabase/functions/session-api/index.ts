@@ -1867,6 +1867,328 @@ Return JSON:
       }
     }
 
+    // ============================================
+    // PLANNER ENDPOINTS - AI-powered scenario generation
+    // ============================================
+
+    // POST /planner/plan - Generate scenario from task goal
+    if (req.method === 'POST' && path === '/planner/plan') {
+      try {
+        const body = await req.json();
+        const { goal, platform, input, constraints, model } = body;
+
+        if (!goal || !platform) {
+          return new Response(JSON.stringify({ 
+            error: 'Missing required fields: goal, platform' 
+          }), {
+            status: 400,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
+
+        const OPENROUTER_API_KEY = Deno.env.get('OPENROUTER_API_KEY');
+        if (!OPENROUTER_API_KEY) {
+          return new Response(JSON.stringify({ error: 'OpenRouter API key not configured' }), {
+            status: 500,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
+
+        console.log(`[planner] Generating scenario for: ${goal} on ${platform}`);
+
+        // Build the planning prompt
+        const systemPrompt = `You are an expert automation planner. Your job is to convert high-level goals into executable scenario steps.
+
+You MUST return ONLY a valid JSON object with the following structure:
+{
+  "scenario": {
+    "name": "Human-readable scenario name",
+    "description": "Brief description",
+    "steps": [
+      { "action": "open", "target": "https://..." },
+      { "action": "wait", "duration": 2 },
+      { "action": "click", "selector": "button.play" },
+      { "action": "play", "duration": 30 },
+      ...
+    ]
+  },
+  "checkpoints": [
+    { "step": 0, "description": "Page loaded" },
+    { "step": 3, "description": "Track playing" }
+  ],
+  "estimated_duration_seconds": 60,
+  "confidence": 0.9
+}
+
+Available actions:
+- open: Navigate to URL (requires "target" URL)
+- wait: Wait for seconds (requires "duration" in seconds)
+- click: Click element (requires "selector" CSS selector)
+- scroll: Scroll page (optional "direction": "down"/"up", "amount": pixels)
+- play: Start media playback (optional "duration" in seconds)
+- like: Like/heart content
+- comment: Add comment (requires "text")
+
+Guidelines:
+- Use realistic human-like delays between actions
+- Include appropriate waits for page loads
+- Add safety waits for dynamic content
+- Consider cookie/consent dialogs
+- Be conservative with durations`;
+
+        const userPrompt = `Create an automation scenario for:
+- Goal: ${goal}
+- Platform: ${platform}
+${input ? `- Target URL/Input: ${input}` : ''}
+${constraints ? `- Constraints: ${JSON.stringify(constraints)}` : ''}
+
+Generate a complete, executable scenario.`;
+
+        const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${OPENROUTER_API_KEY}`,
+            'Content-Type': 'application/json',
+            'HTTP-Referer': Deno.env.get('SUPABASE_URL') || '',
+          },
+          body: JSON.stringify({
+            model: model || 'google/gemini-2.5-flash',
+            messages: [
+              { role: 'system', content: systemPrompt },
+              { role: 'user', content: userPrompt }
+            ],
+            temperature: 0.3,
+            max_tokens: 2000,
+          }),
+        });
+
+        if (!response.ok) {
+          const errorText = await response.text();
+          console.error('[planner] OpenRouter error:', errorText);
+          return new Response(JSON.stringify({ 
+            error: 'Failed to generate scenario',
+            details: errorText
+          }), {
+            status: 500,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
+
+        const data = await response.json();
+        const content = data.choices?.[0]?.message?.content;
+
+        if (!content) {
+          return new Response(JSON.stringify({ error: 'No scenario generated' }), {
+            status: 500,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
+
+        // Parse the JSON from the response
+        let planResult;
+        try {
+          // Extract JSON from markdown code blocks if present
+          const jsonMatch = content.match(/```(?:json)?\s*([\s\S]*?)```/) || 
+                           content.match(/\{[\s\S]*\}/);
+          const jsonStr = jsonMatch ? (jsonMatch[1] || jsonMatch[0]) : content;
+          planResult = JSON.parse(jsonStr.trim());
+        } catch (parseError) {
+          console.error('[planner] Failed to parse scenario:', content);
+          return new Response(JSON.stringify({ 
+            error: 'Failed to parse generated scenario',
+            raw: content
+          }), {
+            status: 500,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
+
+        console.log(`[planner] Generated scenario: ${planResult.scenario?.name || 'unnamed'} with ${planResult.scenario?.steps?.length || 0} steps`);
+
+        return new Response(JSON.stringify({
+          success: true,
+          ...planResult,
+          usage: data.usage,
+        }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+
+      } catch (error) {
+        console.error('[planner] Error:', error);
+        return new Response(JSON.stringify({ 
+          error: error instanceof Error ? error.message : 'Planning failed' 
+        }), {
+          status: 500,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+    }
+
+    // POST /planner/execute - Plan and create task in one step
+    if (req.method === 'POST' && path === '/planner/execute') {
+      try {
+        const body = await req.json();
+        const { goal, platform, input, constraints, model, profile_count, run_count } = body;
+
+        // First, generate the scenario
+        const planResponse = await fetch(
+          `${Deno.env.get('SUPABASE_URL')}/functions/v1/session-api/planner/plan`,
+          {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}`,
+            },
+            body: JSON.stringify({ goal, platform, input, constraints, model }),
+          }
+        );
+
+        if (!planResponse.ok) {
+          const error = await planResponse.json();
+          return new Response(JSON.stringify(error), {
+            status: 500,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
+
+        const planResult = await planResponse.json();
+        
+        if (!planResult.scenario) {
+          return new Response(JSON.stringify({ error: 'No scenario generated' }), {
+            status: 500,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
+
+        // Create the scenario in the database
+        const { data: savedScenario, error: scenarioError } = await supabase
+          .from('scenarios')
+          .insert({
+            name: planResult.scenario.name || `${goal} on ${platform}`,
+            description: planResult.scenario.description,
+            steps: planResult.scenario.steps,
+            estimated_duration_seconds: planResult.estimated_duration_seconds,
+            tags: [platform, goal.split(' ')[0].toLowerCase()],
+          })
+          .select()
+          .single();
+
+        if (scenarioError) {
+          console.error('[planner] Failed to save scenario:', scenarioError);
+          return new Response(JSON.stringify({ error: 'Failed to save scenario' }), {
+            status: 500,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
+
+        // Get profiles
+        const profileLimit = profile_count || 3;
+        const { data: profiles } = await supabase
+          .from('profiles')
+          .select('id')
+          .limit(profileLimit);
+
+        const profileIds = profiles?.map(p => p.id) || [];
+
+        if (profileIds.length === 0) {
+          return new Response(JSON.stringify({ error: 'No profiles available' }), {
+            status: 400,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
+
+        // Create the task
+        const runs = run_count || 1;
+        const { data: task, error: taskError } = await supabase
+          .from('tasks')
+          .insert({
+            name: goal,
+            target_platform: platform,
+            goal_type: goal.split(' ')[0].toLowerCase(),
+            target_url: input,
+            entry_method: input?.startsWith('http') ? 'url' : 'search',
+            profile_ids: profileIds,
+            run_count: runs,
+            generated_scenario_id: savedScenario.id,
+            status: 'active',
+            started_at: new Date().toISOString(),
+            behavior_config: {
+              ...constraints,
+              model,
+            },
+          })
+          .select()
+          .single();
+
+        if (taskError) {
+          console.error('[planner] Failed to create task:', taskError);
+          return new Response(JSON.stringify({ error: 'Failed to create task' }), {
+            status: 500,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
+
+        // Create sessions
+        const sessionsToCreate = [];
+        for (let run = 0; run < runs; run++) {
+          for (const profileId of profileIds) {
+            sessionsToCreate.push({
+              task_id: task.id,
+              scenario_id: savedScenario.id,
+              profile_id: profileId,
+              status: 'queued',
+              total_steps: planResult.scenario.steps?.length || 0,
+              metadata: { run_index: run, planned: true },
+            });
+          }
+        }
+
+        const { data: sessions, error: sessionsError } = await supabase
+          .from('sessions')
+          .insert(sessionsToCreate)
+          .select();
+
+        if (sessionsError) {
+          console.error('[planner] Failed to create sessions:', sessionsError);
+        }
+
+        // Add to execution queue
+        if (sessions && sessions.length > 0) {
+          await supabase.from('execution_queue').insert(
+            sessions.map(s => ({ session_id: s.id, priority: 0 }))
+          );
+        }
+
+        // Update task with session counts
+        await supabase
+          .from('tasks')
+          .update({ sessions_created: sessions?.length || 0 })
+          .eq('id', task.id);
+
+        console.log(`[planner] Created task ${task.id} with ${sessions?.length || 0} sessions`);
+
+        return new Response(JSON.stringify({
+          success: true,
+          task,
+          scenario: savedScenario,
+          sessions_created: sessions?.length || 0,
+          checkpoints: planResult.checkpoints,
+          estimated_duration_seconds: planResult.estimated_duration_seconds,
+        }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+
+      } catch (error) {
+        console.error('[planner] Execute error:', error);
+        return new Response(JSON.stringify({ 
+          error: error instanceof Error ? error.message : 'Execution failed' 
+        }), {
+          status: 500,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+    }
+
     return new Response(JSON.stringify({ error: 'Not found' }), {
       status: 404,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
