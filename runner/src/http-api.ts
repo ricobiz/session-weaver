@@ -3,19 +3,33 @@ import { chromium, Browser, BrowserContext, Page } from 'playwright';
 import { log } from './logger';
 import { applyStealthPatches } from './stealth';
 import { generateFingerprint, getRandomPreset } from './stealth/fingerprint';
-import { humanType, humanClick, humanScroll, randomDelay } from './stealth/human-behavior';
+import { 
+  humanType, 
+  humanClick, 
+  humanDoubleClick,
+  humanScroll, 
+  humanDrag,
+  humanMouseMove,
+  humanKeyboardNav,
+  idleMouseMovement,
+  randomDelay 
+} from './stealth/human-behavior';
 
 interface ExecuteRequest {
-  action: 'screenshot' | 'navigate' | 'click' | 'type' | 'scroll' | 'evaluate';
+  action: 'screenshot' | 'navigate' | 'click' | 'dblclick' | 'type' | 'scroll' | 'drag' | 'mousemove' | 'keyboard' | 'idle' | 'evaluate';
   url?: string;
   selector?: string;
   text?: string;
   coordinates?: { x: number; y: number };
+  toCoordinates?: { x: number; y: number }; // For drag
+  key?: string; // For keyboard navigation
   script?: string;
   timeout?: number;
   speed?: 'slow' | 'normal' | 'fast';
   clear_first?: boolean;
   press_enter?: boolean;
+  click_area_radius?: number; // Pixels for random click area
+  duration?: number; // For idle movement
 }
 
 interface ExecuteResponse {
@@ -119,20 +133,19 @@ async function executeAction(req: ExecuteRequest): Promise<ExecuteResponse> {
       }
 
       case 'click': {
+        const clickRadius = req.click_area_radius || 5;
         if (req.coordinates) {
-          logAction(`Clicking at coordinates: (${req.coordinates.x}, ${req.coordinates.y})`);
-          // Use human-like click with mouse movement
-          await humanClick(page, req.coordinates.x, req.coordinates.y);
+          logAction(`Clicking at area: (${req.coordinates.x}, ${req.coordinates.y}) ±${clickRadius}px`);
+          await humanClick(page, req.coordinates.x, req.coordinates.y, { clickAreaRadius: clickRadius });
         } else if (req.selector) {
           logAction(`Clicking selector: ${req.selector}`);
-          // Get element position and use human-like click
           const element = await page.waitForSelector(req.selector, { timeout });
           if (element) {
             const box = await element.boundingBox();
             if (box) {
               const clickX = box.x + box.width * (0.3 + Math.random() * 0.4);
               const clickY = box.y + box.height * (0.3 + Math.random() * 0.4);
-              await humanClick(page, clickX, clickY);
+              await humanClick(page, clickX, clickY, { clickAreaRadius: clickRadius });
             } else {
               await element.click();
             }
@@ -142,6 +155,111 @@ async function executeAction(req: ExecuteRequest): Promise<ExecuteResponse> {
         }
         
         await randomDelay(300, 600);
+        const screenshot = await page.screenshot({ type: 'png' });
+        return {
+          success: true,
+          currentUrl: page.url(),
+          screenshot: screenshot.toString('base64'),
+          logs,
+        };
+      }
+
+      case 'dblclick': {
+        const clickRadius = req.click_area_radius || 5;
+        if (req.coordinates) {
+          logAction(`Double-clicking at area: (${req.coordinates.x}, ${req.coordinates.y}) ±${clickRadius}px`);
+          await humanDoubleClick(page, req.coordinates.x, req.coordinates.y, { clickAreaRadius: clickRadius });
+        } else if (req.selector) {
+          logAction(`Double-clicking selector: ${req.selector}`);
+          const element = await page.waitForSelector(req.selector, { timeout });
+          if (element) {
+            const box = await element.boundingBox();
+            if (box) {
+              const clickX = box.x + box.width * 0.5;
+              const clickY = box.y + box.height * 0.5;
+              await humanDoubleClick(page, clickX, clickY, { clickAreaRadius: clickRadius });
+            }
+          }
+        } else {
+          throw new Error('Selector or coordinates required for dblclick');
+        }
+        
+        await randomDelay(300, 600);
+        const screenshot = await page.screenshot({ type: 'png' });
+        return {
+          success: true,
+          currentUrl: page.url(),
+          screenshot: screenshot.toString('base64'),
+          logs,
+        };
+      }
+
+      case 'drag': {
+        if (!req.coordinates || !req.toCoordinates) {
+          throw new Error('coordinates and toCoordinates required for drag');
+        }
+        const clickRadius = req.click_area_radius || 8;
+        logAction(`Dragging from (${req.coordinates.x}, ${req.coordinates.y}) to (${req.toCoordinates.x}, ${req.toCoordinates.y}) ±${clickRadius}px`);
+        
+        await humanDrag(
+          page, 
+          req.coordinates.x, 
+          req.coordinates.y, 
+          req.toCoordinates.x, 
+          req.toCoordinates.y,
+          { clickAreaRadius: clickRadius }
+        );
+        
+        await randomDelay(200, 400);
+        const screenshot = await page.screenshot({ type: 'png' });
+        return {
+          success: true,
+          currentUrl: page.url(),
+          screenshot: screenshot.toString('base64'),
+          logs,
+        };
+      }
+
+      case 'mousemove': {
+        if (!req.coordinates) throw new Error('coordinates required for mousemove');
+        logAction(`Moving mouse to: (${req.coordinates.x}, ${req.coordinates.y})`);
+        
+        await humanMouseMove(page, req.coordinates.x, req.coordinates.y);
+        
+        const screenshot = await page.screenshot({ type: 'png' });
+        return {
+          success: true,
+          currentUrl: page.url(),
+          screenshot: screenshot.toString('base64'),
+          logs,
+        };
+      }
+
+      case 'keyboard': {
+        if (!req.key) throw new Error('key required for keyboard');
+        const validKeys = ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'PageUp', 'PageDown', 'Home', 'End'];
+        if (!validKeys.includes(req.key)) {
+          throw new Error(`Invalid key. Valid keys: ${validKeys.join(', ')}`);
+        }
+        logAction(`Keyboard navigation: ${req.key}`);
+        
+        await humanKeyboardNav(page, req.key as any);
+        
+        const screenshot = await page.screenshot({ type: 'png' });
+        return {
+          success: true,
+          currentUrl: page.url(),
+          screenshot: screenshot.toString('base64'),
+          logs,
+        };
+      }
+
+      case 'idle': {
+        const duration = req.duration || 2000;
+        logAction(`Idle mouse movement for ${duration}ms`);
+        
+        await idleMouseMovement(page, duration);
+        
         const screenshot = await page.screenshot({ type: 'png' });
         return {
           success: true,
