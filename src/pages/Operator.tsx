@@ -834,38 +834,38 @@ const Operator = () => {
       </div>
 
       {/* Chat Area - Main content */}
-      <div className="flex-1 flex flex-col min-h-0">
+      <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
         <ScrollArea className="flex-1" ref={scrollRef}>
-          <div className="p-3 space-y-3">
+          <div className="p-3 space-y-3 max-w-full overflow-hidden">
             {/* Active Sessions as compact cards */}
             {activeSessions.length > 0 && (
               <div className="space-y-2">
                 <span className="text-[10px] uppercase tracking-wider text-muted-foreground/60 font-medium">
                   Active Workers
                 </span>
-                <div className="flex flex-wrap gap-2">
+                <div className="flex flex-wrap gap-1.5">
                   {activeSessions.map((session) => (
                     <button
                       key={session.id}
                       onClick={() => requestScreenshot(session.id)}
                       disabled={loadingScreenshots.has(session.id)}
-                      className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg bg-card/80 border border-border/50 hover:border-primary/50 hover:bg-card transition-all text-left group"
+                      className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-card/80 border border-border/50 hover:border-primary/50 hover:bg-card transition-all text-left group"
                     >
                       <div className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${
                         session.status === 'running' ? 'bg-primary animate-pulse' :
                         session.status === 'queued' ? 'bg-muted-foreground' :
                         'bg-amber-500'
                       }`} />
-                      <span className="text-xs font-medium truncate max-w-[100px]">
+                      <span className="text-[10px] font-medium truncate max-w-[60px]">
                         {session.profiles?.name || session.id.slice(0, 6)}
                       </span>
-                      <span className="text-[10px] text-muted-foreground">
+                      <span className="text-[9px] text-muted-foreground">
                         {session.current_step || 0}/{session.total_steps || '?'}
                       </span>
                       {loadingScreenshots.has(session.id) ? (
-                        <Loader2 className="w-3 h-3 animate-spin text-muted-foreground" />
+                        <Loader2 className="w-2.5 h-2.5 animate-spin text-muted-foreground" />
                       ) : (
-                        <Image className="w-3 h-3 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
+                        <Image className="w-2.5 h-2.5 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
                       )}
                     </button>
                   ))}
@@ -880,73 +880,63 @@ const Operator = () => {
                   Tasks
                 </span>
                 {activeTasks.map((task) => (
-                  <div key={task.id} className="flex items-center gap-2 px-3 py-2 rounded-lg bg-card/60 border border-border/40">
+                  <div key={task.id} className="flex items-center gap-1.5 px-2 py-1.5 rounded-lg bg-card/60 border border-border/40 min-w-0">
                     {task.status === 'paused' ? (
-                      <Pause className="w-3.5 h-3.5 text-amber-500 flex-shrink-0" />
+                      <Pause className="w-3 h-3 text-amber-500 flex-shrink-0" />
                     ) : task.sessionsRunning > 0 ? (
-                      <Activity className="w-3.5 h-3.5 text-primary animate-pulse flex-shrink-0" />
+                      <Activity className="w-3 h-3 text-primary animate-pulse flex-shrink-0" />
                     ) : (
-                      <Clock className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" />
+                      <Clock className="w-3 h-3 text-muted-foreground flex-shrink-0" />
                     )}
-                    <span className="text-xs font-medium truncate flex-1">{task.name}</span>
-                    <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
+                    <span className="text-[10px] font-medium truncate flex-1 min-w-0">{task.name}</span>
+                    <div className="flex items-center gap-1 text-[9px] text-muted-foreground flex-shrink-0">
                       <span>{task.progress}%</span>
                       <span className="text-emerald-500">{task.sessionsCompleted}</span>
                       <span>/</span>
                       <span>{task.sessionsTotal}</span>
                     </div>
-                    <div className="flex items-center gap-0.5">
+                    <div className="flex items-center flex-shrink-0">
                       {/* Pause/Resume */}
                       {task.status === 'paused' ? (
                         <Button
                           size="sm"
                           variant="ghost"
                           onClick={() => handleResumeTask(task.id)}
-                          className="h-6 w-6 p-0 hover:bg-emerald-500/10 hover:text-emerald-500"
+                          className="h-5 w-5 p-0 hover:bg-emerald-500/10 hover:text-emerald-500"
                           title="Resume"
                         >
-                          <Play className="w-3 h-3" />
+                          <Play className="w-2.5 h-2.5" />
                         </Button>
                       ) : (
                         <Button
                           size="sm"
                           variant="ghost"
                           onClick={() => handlePauseTask(task.id)}
-                          className="h-6 w-6 p-0 hover:bg-amber-500/10 hover:text-amber-500"
+                          className="h-5 w-5 p-0 hover:bg-amber-500/10 hover:text-amber-500"
                           title="Pause"
                         >
-                          <Pause className="w-3 h-3" />
+                          <Pause className="w-2.5 h-2.5" />
                         </Button>
                       )}
-                      {/* Duplicate */}
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => handleDuplicateTask(task.id)}
-                        className="h-6 w-6 p-0 hover:bg-primary/10 hover:text-primary"
-                        title="Duplicate"
-                      >
-                        <Copy className="w-3 h-3" />
-                      </Button>
                       {/* Stop */}
                       <Button
                         size="sm"
                         variant="ghost"
                         onClick={() => handleStop(task.id)}
-                        className="h-6 w-6 p-0 hover:bg-destructive/10 hover:text-destructive"
+                        className="h-5 w-5 p-0 hover:bg-destructive/10 hover:text-destructive"
                         title="Stop"
                       >
-                        <Square className="w-3 h-3" />
+                        <Square className="w-2.5 h-2.5" />
                       </Button>
                       {/* Delete */}
                       <Button
                         size="sm"
                         variant="ghost"
                         onClick={() => handleDeleteTask(task.id)}
-                        className="h-6 w-6 p-0 hover:bg-destructive/10 hover:text-destructive"
+                        className="h-5 w-5 p-0 hover:bg-destructive/10 hover:text-destructive"
                         title="Delete"
                       >
-                        <Trash2 className="w-3 h-3" />
+                        <Trash2 className="w-2.5 h-2.5" />
                       </Button>
                     </div>
                   </div>
@@ -967,11 +957,11 @@ const Operator = () => {
                 </button>
                 
                 {showTaskHistory && (
-                  <div className="space-y-1.5 max-h-[300px] overflow-y-auto">
+                  <div className="space-y-1 max-h-[300px] overflow-y-auto">
                     {allTasks.map((task) => (
                       <div 
                         key={task.id} 
-                        className={`flex items-center gap-2 px-3 py-2 rounded-lg border ${
+                        className={`flex items-center gap-1.5 px-2 py-1.5 rounded-lg border min-w-0 ${
                           task.status === 'completed' || task.progress === 100 
                             ? 'bg-emerald-500/5 border-emerald-500/20' 
                             : task.status === 'cancelled' || task.status === 'failed'
@@ -981,22 +971,22 @@ const Operator = () => {
                       >
                         {/* Status Icon */}
                         {task.status === 'completed' || task.progress === 100 ? (
-                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 flex-shrink-0" />
+                          <CheckCircle2 className="w-3 h-3 text-emerald-500 flex-shrink-0" />
                         ) : task.status === 'cancelled' ? (
-                          <XCircle className="w-3.5 h-3.5 text-destructive flex-shrink-0" />
+                          <XCircle className="w-3 h-3 text-destructive flex-shrink-0" />
                         ) : task.status === 'failed' ? (
-                          <XCircle className="w-3.5 h-3.5 text-destructive flex-shrink-0" />
+                          <XCircle className="w-3 h-3 text-destructive flex-shrink-0" />
                         ) : task.status === 'active' || task.status === 'pending' ? (
-                          <Activity className="w-3.5 h-3.5 text-primary flex-shrink-0" />
+                          <Activity className="w-3 h-3 text-primary flex-shrink-0" />
                         ) : (
-                          <Clock className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" />
+                          <Clock className="w-3 h-3 text-muted-foreground flex-shrink-0" />
                         )}
                         
                         {/* Task Name */}
-                        <span className="text-xs font-medium truncate flex-1">{task.name}</span>
+                        <span className="text-[10px] font-medium truncate flex-1 min-w-0">{task.name}</span>
                         
                         {/* Stats */}
-                        <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
+                        <div className="flex items-center gap-1 text-[9px] text-muted-foreground flex-shrink-0">
                           <span className="text-emerald-500">{task.sessionsCompleted}</span>
                           {task.sessionsFailed > 0 && (
                             <span className="text-destructive">/{task.sessionsFailed}</span>
@@ -1005,7 +995,7 @@ const Operator = () => {
                         </div>
                         
                         {/* Actions */}
-                        <div className="flex items-center gap-0.5">
+                        <div className="flex items-center flex-shrink-0">
                           {/* Restart */}
                           <Button
                             size="sm"
@@ -1015,16 +1005,6 @@ const Operator = () => {
                             title="Restart"
                           >
                             <RotateCw className="w-2.5 h-2.5" />
-                          </Button>
-                          {/* Duplicate */}
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => handleDuplicateTask(task.id)}
-                            className="h-5 w-5 p-0 hover:bg-primary/10 hover:text-primary"
-                            title="Duplicate"
-                          >
-                            <Copy className="w-2.5 h-2.5" />
                           </Button>
                           {/* Delete */}
                           <Button
