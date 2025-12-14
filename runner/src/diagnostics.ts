@@ -61,14 +61,8 @@ export async function runDiagnostics(
     overallStatus,
   };
   
-  // Report results to API
-  try {
-    for (const result of results) {
-      await api.reportDiagnostic(result);
-    }
-  } catch (error) {
-    log('warning', `Failed to report diagnostics: ${error}`);
-  }
+  // Log results (API reporting is optional)
+  log('info', `Diagnostics: ${results.filter(r => r.status === 'ok').length} OK, ${results.filter(r => r.status === 'warning').length} warnings, ${results.filter(r => r.status === 'error').length} errors`);
   
   log('info', `Diagnostics complete: ${overallStatus}`);
   return report;
