@@ -300,9 +300,7 @@ Deno.serve(async (req) => {
         // Set root directory to runner folder
         await railwayQuery(RAILWAY_API_TOKEN, `
           mutation($input: ServiceInstanceUpdateInput!) {
-            serviceInstanceUpdate(input: $input) {
-              id
-            }
+            serviceInstanceUpdate(input: $input)
           }
         `, {
           input: {
@@ -311,6 +309,15 @@ Deno.serve(async (req) => {
             rootDirectory: 'runner',
             startCommand: 'npm start',
             buildCommand: 'npm install',
+            builder: 'NIXPACKS',
+            nixpacksPlan: JSON.stringify({
+              providers: ['node'],
+              phases: {
+                install: {
+                  cmds: ['npm install']
+                }
+              }
+            })
           }
         }).catch(e => console.log('Service instance update note:', e.message));
 
