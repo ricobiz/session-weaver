@@ -107,7 +107,6 @@ export interface Job {
   autonomous?: {
     goal: string;
     task_id: string;
-    agent_endpoint: string;
   };
 }
 

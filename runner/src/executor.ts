@@ -102,11 +102,16 @@ export class SessionExecutor {
             ? autonomous.goal.match(/https?:\/\/[^\s]+/)?.[0] || 'https://www.google.com'
             : 'https://www.google.com';
           
-          const agentEndpoint = `${process.env.API_BASE_URL}${autonomous.agent_endpoint}`;
+          // Build agent endpoint from API base URL
+          // API_BASE_URL = https://xxx.supabase.co/functions/v1/session-api
+          // We need: https://xxx.supabase.co/functions/v1/agent-executor
+          const apiBaseUrl = process.env.API_BASE_URL || '';
+          const agentEndpoint = apiBaseUrl.replace(/\/session-api\/?$/, '/agent-executor');
           
-          sessionLog('info', `Starting autonomous AI agent with endpoint: ${agentEndpoint}`);
+          sessionLog('info', `Starting autonomous AI agent`);
           sessionLog('info', `Goal: ${autonomous.goal}`);
           sessionLog('info', `Start URL: ${startUrl}`);
+          sessionLog('debug', `Agent endpoint: ${agentEndpoint}`);
           
           const result = await autonomousExecutor.execute(
             session,
@@ -383,7 +388,7 @@ export class SessionExecutor {
   }
 
   private async launchBrowser(session: Session): Promise<Browser> {
-    const networkConfig = session.profiles.network_config;
+    const networkConfig = session.profiles?.network_config;
     
     const launchOptions: any = {
       headless: this.config.headless,
@@ -426,7 +431,7 @@ export class SessionExecutor {
 
   private async createContext(browser: Browser, session: Session): Promise<BrowserContext> {
     const profile = session.profiles;
-    const networkConfig = profile.network_config;
+    const networkConfig = profile?.network_config;
     
     // Generate fingerprint for anti-detection
     const fingerprint = generateFingerprint(getRandomPreset());
@@ -479,7 +484,7 @@ export class SessionExecutor {
     contextOptions.colorScheme = 'light';
 
     // Apply storage state if available
-    if (profile.storage_state && Object.keys(profile.storage_state).length > 0) {
+    if (profile?.storage_state && Object.keys(profile.storage_state).length > 0) {
       contextOptions.storageState = profile.storage_state;
     }
 
