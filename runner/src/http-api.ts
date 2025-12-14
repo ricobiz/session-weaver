@@ -1,5 +1,6 @@
+import { createServer, IncomingMessage, ServerResponse } from 'http';
 import { chromium, Browser, BrowserContext, Page } from 'playwright';
-import { log, createSessionLogger } from './logger';
+import { log } from './logger';
 import { applyStealthPatches } from './stealth';
 import { generateFingerprint, getRandomPreset } from './stealth/fingerprint';
 
@@ -209,153 +210,94 @@ async function closeBrowser(): Promise<void> {
   addLog('Browser closed');
 }
 
-// HTTP Server
-export function startHttpApi(port: number = 3001): void {
-  const server = Bun?.serve?.({
-    port,
-    async fetch(req) {
-      const url = new URL(req.url);
-      const path = url.pathname;
-
-      // CORS headers
-      const corsHeaders = {
-        'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-      };
-
-      if (req.method === 'OPTIONS') {
-        return new Response(null, { headers: corsHeaders });
-      }
-
-      try {
-        // GET /health - Health check
-        if (path === '/health' && req.method === 'GET') {
-          return new Response(JSON.stringify({
-            status: 'ok',
-            browserActive: testBrowser?.isConnected() || false,
-            currentUrl: testPage ? await testPage.url().catch(() => null) : null,
-          }), {
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-          });
-        }
-
-        // GET /logs - Get recent logs
-        if (path === '/logs' && req.method === 'GET') {
-          return new Response(JSON.stringify({ logs: sessionLogs }), {
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-          });
-        }
-
-        // POST /execute - Execute an action
-        if (path === '/execute' && req.method === 'POST') {
-          const body = await req.json() as ExecuteRequest;
-          const result = await executeAction(body);
-          return new Response(JSON.stringify(result), {
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-          });
-        }
-
-        // POST /close - Close browser
-        if (path === '/close' && req.method === 'POST') {
-          await closeBrowser();
-          return new Response(JSON.stringify({ success: true }), {
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-          });
-        }
-
-        // 404
-        return new Response(JSON.stringify({ error: 'Not found' }), {
-          status: 404,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        });
-
-      } catch (error) {
-        const errorMessage = error instanceof Error ? error.message : String(error);
-        return new Response(JSON.stringify({ error: errorMessage }), {
-          status: 500,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        });
-      }
-    },
+async function parseBody(req: IncomingMessage): Promise<string> {
+  return new Promise((resolve, reject) => {
+    let body = '';
+    req.on('data', (chunk: Buffer) => {
+      body += chunk.toString();
+    });
+    req.on('end', () => resolve(body));
+    req.on('error', reject);
   });
+}
 
-  if (server) {
-    log('info', `HTTP API listening on port ${port}`);
-  } else {
-    // Fallback for Node.js (non-Bun environment)
-    startNodeHttpApi(port);
+async function getCurrentUrl(): Promise<string | null> {
+  try {
+    return testPage ? testPage.url() : null;
+  } catch {
+    return null;
   }
 }
 
-// Node.js fallback using native http
-function startNodeHttpApi(port: number): void {
-  import('http').then(({ createServer }) => {
-    const server = createServer(async (req, res) => {
-      const corsHeaders = {
-        'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-        'Content-Type': 'application/json',
-      };
+// HTTP Server using Node.js http module
+export function startHttpApi(port: number = 3001): void {
+  const corsHeaders: Record<string, string> = {
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+    'Content-Type': 'application/json',
+  };
 
-      if (req.method === 'OPTIONS') {
-        res.writeHead(204, corsHeaders);
-        res.end();
+  const server = createServer(async (req: IncomingMessage, res: ServerResponse) => {
+    if (req.method === 'OPTIONS') {
+      res.writeHead(204, corsHeaders);
+      res.end();
+      return;
+    }
+
+    const urlPath = req.url || '/';
+    const path = urlPath.split('?')[0];
+
+    try {
+      // GET /health - Health check
+      if (path === '/health' && req.method === 'GET') {
+        const currentUrl = await getCurrentUrl();
+        res.writeHead(200, corsHeaders);
+        res.end(JSON.stringify({
+          status: 'ok',
+          browserActive: testBrowser?.isConnected() || false,
+          currentUrl,
+        }));
         return;
       }
 
-      const url = new URL(req.url || '/', `http://localhost:${port}`);
-      const path = url.pathname;
-
-      try {
-        if (path === '/health' && req.method === 'GET') {
-          res.writeHead(200, corsHeaders);
-          res.end(JSON.stringify({
-            status: 'ok',
-            browserActive: testBrowser?.isConnected() || false,
-            currentUrl: testPage ? await testPage.url().catch(() => null) : null,
-          }));
-          return;
-        }
-
-        if (path === '/logs' && req.method === 'GET') {
-          res.writeHead(200, corsHeaders);
-          res.end(JSON.stringify({ logs: sessionLogs }));
-          return;
-        }
-
-        if (path === '/execute' && req.method === 'POST') {
-          let body = '';
-          for await (const chunk of req) {
-            body += chunk;
-          }
-          const parsed = JSON.parse(body) as ExecuteRequest;
-          const result = await executeAction(parsed);
-          res.writeHead(200, corsHeaders);
-          res.end(JSON.stringify(result));
-          return;
-        }
-
-        if (path === '/close' && req.method === 'POST') {
-          await closeBrowser();
-          res.writeHead(200, corsHeaders);
-          res.end(JSON.stringify({ success: true }));
-          return;
-        }
-
-        res.writeHead(404, corsHeaders);
-        res.end(JSON.stringify({ error: 'Not found' }));
-
-      } catch (error) {
-        const errorMessage = error instanceof Error ? error.message : String(error);
-        res.writeHead(500, corsHeaders);
-        res.end(JSON.stringify({ error: errorMessage }));
+      // GET /logs - Get recent logs
+      if (path === '/logs' && req.method === 'GET') {
+        res.writeHead(200, corsHeaders);
+        res.end(JSON.stringify({ logs: sessionLogs }));
+        return;
       }
-    });
 
-    server.listen(port, () => {
-      log('info', `HTTP API listening on port ${port}`);
-    });
+      // POST /execute - Execute an action
+      if (path === '/execute' && req.method === 'POST') {
+        const body = await parseBody(req);
+        const parsed = JSON.parse(body) as ExecuteRequest;
+        const result = await executeAction(parsed);
+        res.writeHead(200, corsHeaders);
+        res.end(JSON.stringify(result));
+        return;
+      }
+
+      // POST /close - Close browser
+      if (path === '/close' && req.method === 'POST') {
+        await closeBrowser();
+        res.writeHead(200, corsHeaders);
+        res.end(JSON.stringify({ success: true }));
+        return;
+      }
+
+      // 404
+      res.writeHead(404, corsHeaders);
+      res.end(JSON.stringify({ error: 'Not found' }));
+
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      res.writeHead(500, corsHeaders);
+      res.end(JSON.stringify({ error: errorMessage }));
+    }
+  });
+
+  server.listen(port, () => {
+    log('info', `HTTP API listening on port ${port}`);
   });
 }
