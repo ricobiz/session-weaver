@@ -50,3 +50,6 @@ verify_jwt = false
 
 [functions.railway-deploy]
 verify_jwt = false
+
+[functions.runner-test]
+verify_jwt = false
