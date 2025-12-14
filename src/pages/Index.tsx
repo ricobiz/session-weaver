@@ -34,7 +34,10 @@ import {
   useStartTask,
   usePauseTask,
   useResumeTask,
-  useStopTask
+  useStopTask,
+  useDeleteTask,
+  useDeleteProfile,
+  useDeleteSession
 } from '@/hooks/useSessionData';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -58,7 +61,8 @@ import {
   Settings,
   Cpu,
   Shield,
-  Zap
+  Zap,
+  Trash2
 } from 'lucide-react';
 import { Database } from '@/integrations/supabase/types';
 
@@ -77,6 +81,9 @@ const Index = () => {
   const pauseTaskMutation = usePauseTask();
   const resumeTaskMutation = useResumeTask();
   const stopTaskMutation = useStopTask();
+  const deleteTaskMutation = useDeleteTask();
+  const deleteProfileMutation = useDeleteProfile();
+  const deleteSessionMutation = useDeleteSession();
   
   const [loadingTaskId, setLoadingTaskId] = useState<string | null>(null);
 
@@ -171,6 +178,35 @@ const Index = () => {
     }
   };
 
+  const handleDeleteTask = async (taskId: string) => {
+    try {
+      await deleteTaskMutation.mutateAsync(taskId);
+      toast({ title: 'Task Deleted', description: 'Task and sessions removed.' });
+      if (selectedTaskId === taskId) setSelectedTaskId(null);
+    } catch (error) {
+      toast({ title: 'Error', description: 'Failed to delete task.', variant: 'destructive' });
+    }
+  };
+
+  const handleDeleteProfile = async (profileId: string) => {
+    try {
+      await deleteProfileMutation.mutateAsync(profileId);
+      toast({ title: 'Profile Deleted', description: 'Profile removed.' });
+    } catch (error) {
+      toast({ title: 'Error', description: 'Failed to delete profile.', variant: 'destructive' });
+    }
+  };
+
+  const handleDeleteSession = async (sessionId: string) => {
+    try {
+      await deleteSessionMutation.mutateAsync(sessionId);
+      toast({ title: 'Session Deleted', description: 'Session removed.' });
+      if (selectedSessionId === sessionId) setSelectedSessionId(null);
+    } catch (error) {
+      toast({ title: 'Error', description: 'Failed to delete session.', variant: 'destructive' });
+    }
+  };
+
   if (isLoading && !stats) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
@@ -256,6 +292,7 @@ const Index = () => {
                   onPauseTask={handlePauseTask}
                   onResumeTask={handleResumeTask}
                   onStopTask={handleStopTask}
+                  onDeleteTask={handleDeleteTask}
                   loadingTaskId={loadingTaskId || undefined}
                 />
               </TabsContent>
@@ -290,6 +327,7 @@ const Index = () => {
                           }}
                           isSelected={selectedSessionId === session.id}
                           onClick={() => setSelectedSessionId(session.id)}
+                          onDelete={handleDeleteSession}
                         />
                       ))}
                     </div>
@@ -324,8 +362,11 @@ const Index = () => {
                         email: p.email,
                         networkConfig: (p.network_config as any)?.region || 'Default',
                         lastActive: p.last_active || p.created_at,
-                        sessionsRun: p.sessions_run || 0
-                      }))} 
+                        sessionsRun: p.sessions_run || 0,
+                        proxyUrl: (p as any).proxy_url,
+                        userAgent: (p as any).user_agent,
+                      }))}
+                      onDelete={handleDeleteProfile}
                     />
                   )}
                 </ScrollArea>

@@ -17,6 +17,9 @@ import {
   pauseTask,
   resumeTask,
   stopTask,
+  deleteProfile,
+  deleteTask,
+  deleteSession,
   subscribeToSessions,
   subscribeToLogs,
   subscribeToRunnerHealth,
@@ -240,6 +243,43 @@ export function useStopTask() {
     mutationFn: stopTask,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['tasks'] });
+      queryClient.invalidateQueries({ queryKey: ['sessions'] });
+      queryClient.invalidateQueries({ queryKey: ['stats'] });
+    }
+  });
+}
+
+export function useDeleteProfile() {
+  const queryClient = useQueryClient();
+  
+  return useMutation({
+    mutationFn: deleteProfile,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['profiles'] });
+      queryClient.invalidateQueries({ queryKey: ['stats'] });
+    }
+  });
+}
+
+export function useDeleteTask() {
+  const queryClient = useQueryClient();
+  
+  return useMutation({
+    mutationFn: deleteTask,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['tasks'] });
+      queryClient.invalidateQueries({ queryKey: ['sessions'] });
+      queryClient.invalidateQueries({ queryKey: ['stats'] });
+    }
+  });
+}
+
+export function useDeleteSession() {
+  const queryClient = useQueryClient();
+  
+  return useMutation({
+    mutationFn: deleteSession,
+    onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['sessions'] });
       queryClient.invalidateQueries({ queryKey: ['stats'] });
     }

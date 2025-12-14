@@ -58,48 +58,57 @@ export type Database = {
           auth_state: string | null
           created_at: string
           email: string
+          fingerprint: Json | null
           id: string
           last_active: string | null
           metadata: Json | null
           name: string
           network_config: Json | null
           password_hash: string | null
+          proxy_url: string | null
           session_context: Json | null
           sessions_run: number | null
           storage_state: Json | null
           updated_at: string
+          user_agent: string | null
         }
         Insert: {
           auth_checked_at?: string | null
           auth_state?: string | null
           created_at?: string
           email: string
+          fingerprint?: Json | null
           id?: string
           last_active?: string | null
           metadata?: Json | null
           name: string
           network_config?: Json | null
           password_hash?: string | null
+          proxy_url?: string | null
           session_context?: Json | null
           sessions_run?: number | null
           storage_state?: Json | null
           updated_at?: string
+          user_agent?: string | null
         }
         Update: {
           auth_checked_at?: string | null
           auth_state?: string | null
           created_at?: string
           email?: string
+          fingerprint?: Json | null
           id?: string
           last_active?: string | null
           metadata?: Json | null
           name?: string
           network_config?: Json | null
           password_hash?: string | null
+          proxy_url?: string | null
           session_context?: Json | null
           sessions_run?: number | null
           storage_state?: Json | null
           updated_at?: string
+          user_agent?: string | null
         }
         Relationships: []
       }

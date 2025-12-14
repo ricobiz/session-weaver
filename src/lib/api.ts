@@ -299,6 +299,71 @@ export async function createProfile(profile: Omit<Profile, 'id' | 'created_at' |
   return data;
 }
 
+// Delete a profile
+export async function deleteProfile(profileId: string): Promise<boolean> {
+  const { error } = await supabase
+    .from('profiles')
+    .delete()
+    .eq('id', profileId);
+
+  if (error) {
+    console.error('Error deleting profile:', error);
+    return false;
+  }
+  return true;
+}
+
+// Delete a task and its sessions
+export async function deleteTask(taskId: string): Promise<boolean> {
+  // First delete related sessions
+  const { error: sessionsError } = await supabase
+    .from('sessions')
+    .delete()
+    .eq('task_id', taskId);
+
+  if (sessionsError) {
+    console.error('Error deleting task sessions:', sessionsError);
+    return false;
+  }
+
+  // Then delete the task
+  const { error } = await supabase
+    .from('tasks')
+    .delete()
+    .eq('id', taskId);
+
+  if (error) {
+    console.error('Error deleting task:', error);
+    return false;
+  }
+  return true;
+}
+
+// Delete a session
+export async function deleteSession(sessionId: string): Promise<boolean> {
+  // First delete related logs
+  const { error: logsError } = await supabase
+    .from('session_logs')
+    .delete()
+    .eq('session_id', sessionId);
+
+  if (logsError) {
+    console.error('Error deleting session logs:', logsError);
+  }
+
+  // Then delete the session
+  const { error } = await supabase
+    .from('sessions')
+    .delete()
+    .eq('id', sessionId);
+
+  if (error) {
+    console.error('Error deleting session:', error);
+    return false;
+  }
+  return true;
+}
+
 // Create a new scenario
 export async function createScenario(scenario: Omit<Scenario, 'id' | 'created_at' | 'updated_at'>): Promise<Scenario | null> {
   const { data, error } = await supabase

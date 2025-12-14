@@ -8,10 +8,10 @@ import {
   Pause, 
   CheckCircle2, 
   Clock,
-  AlertTriangle,
   Eye,
   Square,
-  Loader2
+  Loader2,
+  Trash2
 } from 'lucide-react';
 
 interface Task {
@@ -36,6 +36,7 @@ interface TaskListProps {
   onPauseTask?: (taskId: string) => void;
   onResumeTask?: (taskId: string) => void;
   onStopTask?: (taskId: string) => void;
+  onDeleteTask?: (taskId: string) => void;
   loadingTaskId?: string;
 }
 
@@ -62,6 +63,7 @@ export function TaskList({
   onPauseTask,
   onResumeTask,
   onStopTask,
+  onDeleteTask,
   loadingTaskId
 }: TaskListProps) {
   if (tasks.length === 0) {
@@ -190,6 +192,17 @@ export function TaskList({
                     >
                       <Square className="w-2.5 h-2.5" />
                       Stop
+                    </Button>
+                  )}
+                  {onDeleteTask && (
+                    <Button 
+                      size="sm" 
+                      variant="ghost"
+                      className="h-6 text-[10px] gap-1 text-destructive hover:text-destructive"
+                      onClick={(e) => { e.stopPropagation(); onDeleteTask(task.id); }}
+                      disabled={isLoading || task.status === 'active'}
+                    >
+                      <Trash2 className="w-2.5 h-2.5" />
                     </Button>
                   )}
                   <Button 
