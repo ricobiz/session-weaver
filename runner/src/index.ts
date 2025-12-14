@@ -65,9 +65,11 @@ async function pollForJobs(): Promise<void> {
       return;
     }
 
+    const isAutonomous = job.execution_mode === 'autonomous';
     log('info', `Claimed job: ${job.job_id}`, {
       session: job.session.id.slice(0, 8),
-      scenario: job.session.scenarios.name,
+      mode: isAutonomous ? 'autonomous' : 'scenario',
+      ...(isAutonomous ? { goal: job.autonomous?.goal?.slice(0, 50) } : { scenario: job.session.scenarios?.name }),
     });
 
     // Execute in background

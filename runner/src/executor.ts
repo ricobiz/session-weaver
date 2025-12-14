@@ -14,6 +14,7 @@ import {
 import { detectCaptcha, resolveCaptcha } from './captcha';
 import { applyStealthPatches, applyPagePatches } from './stealth';
 import { generateFingerprint, getRandomPreset } from './stealth/fingerprint';
+import { AutonomousExecutor } from './autonomous';
 
 export interface ExecutorConfig {
   headless: boolean;
@@ -37,14 +38,22 @@ export class SessionExecutor {
   }
 
   async execute(job: Job): Promise<{ success: boolean }> {
-    const { session, delay_before_start_ms } = job;
+    const { session, delay_before_start_ms, execution_mode, autonomous } = job;
     const sessionLog = createSessionLogger(session.id);
+    const isAutonomous = execution_mode === 'autonomous';
 
-    sessionLog('info', `Starting execution for scenario: ${session.scenarios.name}`);
-    sessionLog('info', `Profile: ${session.profiles.name} (${session.profiles.email})`);
+    if (isAutonomous) {
+      sessionLog('info', `Starting autonomous execution for goal: ${autonomous?.goal || 'unknown'}`);
+    } else {
+      sessionLog('info', `Starting execution for scenario: ${session.scenarios?.name || 'unknown'}`);
+    }
+    
+    if (session.profiles) {
+      sessionLog('info', `Profile: ${session.profiles.name} (${session.profiles.email})`);
+    }
 
-    // Check if this is a resume
-    const resumeFromStep = session.last_successful_step ?? 0;
+    // Check if this is a resume (only for scenario mode)
+    const resumeFromStep = !isAutonomous ? (session.last_successful_step ?? 0) : 0;
     if (resumeFromStep > 0) {
       sessionLog('info', `Resuming from step ${resumeFromStep + 1}`);
     }
@@ -77,16 +86,64 @@ export class SessionExecutor {
         await this.api.sendLog(
           session.id,
           'info',
-          resumeFromStep > 0 
-            ? `Session resumed from step ${resumeFromStep + 1}${sessionRetryCount > 0 ? ` (retry ${sessionRetryCount})` : ''}` 
-            : `Session initialized${sessionRetryCount > 0 ? ` (retry ${sessionRetryCount})` : ''}`,
+          isAutonomous 
+            ? `Autonomous session started${sessionRetryCount > 0 ? ` (retry ${sessionRetryCount})` : ''}`
+            : (resumeFromStep > 0 
+              ? `Session resumed from step ${resumeFromStep + 1}${sessionRetryCount > 0 ? ` (retry ${sessionRetryCount})` : ''}` 
+              : `Session initialized${sessionRetryCount > 0 ? ` (retry ${sessionRetryCount})` : ''}`),
           0,
           'init'
         );
 
-        // Execute scenario steps
-        const steps = session.scenarios.steps;
+        // ====== AUTONOMOUS MODE ======
+        if (isAutonomous && autonomous) {
+          const autonomousExecutor = new AutonomousExecutor(this.api);
+          const startUrl = autonomous.goal?.includes('http') 
+            ? autonomous.goal.match(/https?:\/\/[^\s]+/)?.[0] || 'https://www.google.com'
+            : 'https://www.google.com';
+          
+          const agentEndpoint = `${process.env.API_BASE_URL}${autonomous.agent_endpoint}`;
+          
+          sessionLog('info', `Starting autonomous AI agent with endpoint: ${agentEndpoint}`);
+          sessionLog('info', `Goal: ${autonomous.goal}`);
+          sessionLog('info', `Start URL: ${startUrl}`);
+          
+          const result = await autonomousExecutor.execute(
+            session,
+            autonomous.goal,
+            startUrl,
+            agentEndpoint,
+            browser!,
+            context!,
+            page!
+          );
+
+          if (result.success) {
+            await this.api.updateSession(session.id, {
+              status: 'success',
+              progress: 100,
+              is_resumable: false,
+            });
+            sessionLog('success', `Autonomous session completed (${result.actionsExecuted} actions, score: ${result.verificationScore.toFixed(2)})`);
+            success = true;
+          } else {
+            await this.api.updateSession(session.id, {
+              status: 'error',
+              error_message: `Autonomous execution failed after ${result.actionsExecuted} actions`,
+            });
+            sessionLog('error', `Autonomous session failed (${result.actionsExecuted} actions)`);
+          }
+          break; // Exit retry loop
+        }
+
+        // ====== SCENARIO MODE ======
+        const steps = session.scenarios?.steps || [];
         const totalSteps = steps.length;
+        
+        if (totalSteps === 0) {
+          throw new Error('No scenario steps defined');
+        }
+        
         const stepStates: Record<number, StepState> = session.resume_metadata?.stepStates || {};
         const startFromStep = sessionRetryCount > 0 ? (session.last_successful_step ?? 0) : resumeFromStep;
 
@@ -168,7 +225,9 @@ export class SessionExecutor {
 
         if (allStepsCompleted) {
           // Save storage state back to profile
-          await this.saveStorageState(context, session.profiles.id);
+          if (session.profiles?.id) {
+            await this.saveStorageState(context, session.profiles.id);
+          }
 
           // Mark session as complete
           await this.api.updateSession(session.id, {
