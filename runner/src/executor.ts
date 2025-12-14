@@ -393,27 +393,56 @@ export class SessionExecutor {
     const launchOptions: any = {
       headless: this.config.headless,
       args: [
-        // Anti-detection flags
+        // === CRITICAL: Anti-detection flags ===
         '--disable-blink-features=AutomationControlled',
         '--disable-infobars',
+        
+        // Remove all automation indicators
+        '--disable-automation',
+        '--disable-component-update',
+        '--disable-domain-reliability',
+        '--disable-background-networking',
+        '--disable-sync',
+        '--disable-translate',
+        '--disable-default-apps',
+        
+        // Prevent detection via Chrome DevTools Protocol markers
+        '--disable-extensions',
+        '--disable-component-extensions-with-background-pages',
+        '--disable-client-side-phishing-detection',
+        
+        // Hide headless indicators
         '--disable-background-timer-throttling',
         '--disable-backgrounding-occluded-windows',
         '--disable-renderer-backgrounding',
-        '--disable-features=TranslateUI',
+        '--disable-features=TranslateUI,AutofillServerCommunication',
         '--disable-ipc-flooding-protection',
+        
+        // Window/display settings
+        '--window-size=1920,1080',
+        '--start-maximized',
+        
+        // Standard stability flags
         '--no-first-run',
         '--no-default-browser-check',
-        // Avoid detection of automation
-        '--disable-dev-shm-usage',
-        '--disable-accelerated-2d-canvas',
-        '--disable-gpu-sandbox',
-        // Stability
         '--no-sandbox',
         '--disable-setuid-sandbox',
+        '--disable-dev-shm-usage',
+        
+        // GPU/rendering (can reveal headless)
+        '--disable-gpu',
+        '--disable-software-rasterizer',
+        
+        // Reduce fingerprint uniqueness
+        '--disable-reading-from-canvas',
+        '--disable-remote-fonts',
       ],
       ignoreDefaultArgs: [
-        '--enable-automation',
+        '--enable-automation',  // CRITICAL: removes "Chrome is being controlled" bar
         '--enable-blink-features=IdleDetection',
+        '--export-tagged-pdf',
+        '--headless',  // We set our own headless mode
+        '--hide-scrollbars',
       ],
     };
 
@@ -490,7 +519,51 @@ export class SessionExecutor {
 
     const context = await browser.newContext(contextOptions);
 
-    // Apply stealth patches to context
+    // === CDP: Remove webdriver flag BEFORE any page loads ===
+    // This is critical because some sites check webdriver before our init scripts run
+    try {
+      const cdpSession = await context.newCDPSession(await context.newPage().then(p => { p.close(); return context.pages()[0] || context.newPage(); }).catch(() => context.newPage()));
+      
+      // Execute CDP command to remove webdriver
+      await cdpSession.send('Page.addScriptToEvaluateOnNewDocument', {
+        source: `
+          // Remove webdriver flag at the earliest possible moment
+          Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+          
+          // Remove phantom properties
+          delete window.callPhantom;
+          delete window._phantom;
+          delete window.phantom;
+          Object.defineProperty(window, 'callPhantom', { get: () => undefined });
+          Object.defineProperty(window, '_phantom', { get: () => undefined });
+          Object.defineProperty(window, 'phantom', { get: () => undefined });
+          
+          // Remove selenium/driver properties from document
+          ['__webdriver_script_fn', '__driver_evaluate', '__webdriver_evaluate', 
+           '__selenium_evaluate', '__fxdriver_evaluate', 'webdriver', 'driver',
+           '__webdriver_unwrapped', '__selenium_unwrapped', '__fxdriver_unwrapped']
+          .forEach(prop => {
+            try { delete document[prop]; } catch(e) {}
+            try { Object.defineProperty(document, prop, { get: () => undefined }); } catch(e) {}
+          });
+          
+          // Remove $cdc_ patterns (Chrome DevTools detection)
+          Object.keys(document).filter(k => /^\\$cdc_|^\\$chrome_/.test(k)).forEach(k => {
+            try { delete document[k]; } catch(e) {}
+          });
+          Object.keys(window).filter(k => /^\\$cdc_|^\\$chrome_/.test(k)).forEach(k => {
+            try { delete window[k]; } catch(e) {}
+          });
+        `
+      });
+      
+      await cdpSession.detach();
+    } catch (cdpError) {
+      // CDP not available in some environments, fall back to init script only
+      globalLog('debug', 'CDP session not available, using init script only');
+    }
+
+    // Apply stealth patches to context (backup/additional patches)
     await applyStealthPatches(context, fingerprint);
 
     return context;
