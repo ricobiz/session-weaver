@@ -389,7 +389,7 @@ Deno.serve(async (req) => {
     }
 
     // ========================================
-    // STATUS - Check deployment status
+    // STATUS - Check deployment status with logs
     // ========================================
     if (action === 'status' && body.serviceId) {
       const statusData = await railwayQuery(RAILWAY_API_TOKEN, `
@@ -397,12 +397,13 @@ Deno.serve(async (req) => {
           service(id: $serviceId) {
             id
             name
-            deployments {
+            deployments(first: 5) {
               edges {
                 node {
                   id
                   status
                   createdAt
+                  staticUrl
                 }
               }
             }
@@ -410,17 +411,44 @@ Deno.serve(async (req) => {
         }
       `, { serviceId: body.serviceId });
 
-      const latestDeployment = statusData.service.deployments.edges[0]?.node;
+      const deployments = statusData.service.deployments.edges.map((e: any) => e.node);
+      const latestDeployment = deployments[0];
+
+      // Try to get build logs for the latest deployment
+      let buildLogs: string[] = [];
+      if (latestDeployment?.id) {
+        try {
+          const logsData = await railwayQuery(RAILWAY_API_TOKEN, `
+            query($deploymentId: String!) {
+              deploymentLogs(deploymentId: $deploymentId, limit: 50) {
+                message
+                timestamp
+                severity
+              }
+            }
+          `, { deploymentId: latestDeployment.id });
+          
+          buildLogs = logsData.deploymentLogs?.map((l: any) => 
+            `[${l.severity || 'INFO'}] ${l.message}`
+          ) || [];
+        } catch (e) {
+          // Logs might not be available yet
+          console.log('Could not fetch logs:', e);
+        }
+      }
 
       return new Response(
         JSON.stringify({
           success: true,
           service: statusData.service.name,
+          deployments: deployments.slice(0, 3),
           latestDeployment: latestDeployment ? {
             id: latestDeployment.id,
             status: latestDeployment.status,
             createdAt: latestDeployment.createdAt,
+            url: latestDeployment.staticUrl,
           } : null,
+          buildLogs,
         }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
