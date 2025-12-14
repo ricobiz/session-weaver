@@ -30,8 +30,19 @@ import {
   Play,
   Trash2,
   Copy,
+  Plus,
+  MessageSquare,
+  ChevronDown,
+  History,
 } from 'lucide-react';
 import { OperatorBalanceHeader } from '@/components/operator/OperatorBalanceHeader';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { TaskPlanner } from '@/components/TaskPlanner';
 import { TaskSupervisor } from '@/components/TaskSupervisor';
 
@@ -85,26 +96,67 @@ interface ConversationMessage {
   content: string;
 }
 
+interface ChatSession {
+  id: string;
+  name: string;
+  createdAt: Date;
+  messages: ChatMessage[];
+  conversation: ConversationMessage[];
+}
+
 const STORAGE_KEY_MODEL = 'operator-selected-model';
-const STORAGE_KEY_CONVERSATION = 'operator-conversation-history';
+const STORAGE_KEY_SESSIONS = 'operator-chat-sessions';
+const STORAGE_KEY_ACTIVE_SESSION = 'operator-active-session';
 
 const Operator = () => {
   const [command, setCommand] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
   const [selectedModel, setSelectedModel] = useState(() => {
-    return localStorage.getItem(STORAGE_KEY_MODEL) || 'google/gemini-2.5-flash';
-  });
-  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
-  const [conversationHistory, setConversationHistory] = useState<ConversationMessage[]>(() => {
-    try {
-      const saved = localStorage.getItem(STORAGE_KEY_CONVERSATION);
-      return saved ? JSON.parse(saved) : [];
-    } catch {
-      return [];
-    }
+    return localStorage.getItem(STORAGE_KEY_MODEL) || 'anthropic/claude-3.5-sonnet';
   });
   const [loadingScreenshots, setLoadingScreenshots] = useState<Set<string>>(new Set());
   const scrollRef = useRef<HTMLDivElement>(null);
+
+  // Chat sessions management
+  const [chatSessions, setChatSessions] = useState<ChatSession[]>(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY_SESSIONS);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        return parsed.map((s: any) => ({
+          ...s,
+          createdAt: new Date(s.createdAt),
+          messages: s.messages.map((m: any) => ({ ...m, timestamp: new Date(m.timestamp) })),
+        }));
+      }
+    } catch {}
+    return [];
+  });
+
+  const [activeSessionId, setActiveSessionId] = useState<string | null>(() => {
+    return localStorage.getItem(STORAGE_KEY_ACTIVE_SESSION);
+  });
+
+  // Get current session
+  const currentSession = chatSessions.find(s => s.id === activeSessionId);
+  const chatMessages = currentSession?.messages || [];
+  const conversationHistory = currentSession?.conversation || [];
+
+  // Persist sessions
+  useEffect(() => {
+    if (chatSessions.length > 0) {
+      localStorage.setItem(STORAGE_KEY_SESSIONS, JSON.stringify(chatSessions.slice(-20))); // Keep last 20 sessions
+    }
+  }, [chatSessions]);
+
+  // Persist active session ID
+  useEffect(() => {
+    if (activeSessionId) {
+      localStorage.setItem(STORAGE_KEY_ACTIVE_SESSION, activeSessionId);
+    } else {
+      localStorage.removeItem(STORAGE_KEY_ACTIVE_SESSION);
+    }
+  }, [activeSessionId]);
 
   // Persist model selection
   const handleModelChange = (model: string) => {
@@ -112,18 +164,66 @@ const Operator = () => {
     localStorage.setItem(STORAGE_KEY_MODEL, model);
   };
 
-  // Persist conversation history
-  useEffect(() => {
-    if (conversationHistory.length > 0) {
-      localStorage.setItem(STORAGE_KEY_CONVERSATION, JSON.stringify(conversationHistory.slice(-50))); // Keep last 50 messages
-    }
-  }, [conversationHistory]);
+  // Create new session
+  const createNewSession = (name?: string) => {
+    const newSession: ChatSession = {
+      id: Math.random().toString(36).slice(2),
+      name: name || `Chat ${chatSessions.length + 1}`,
+      createdAt: new Date(),
+      messages: [],
+      conversation: [],
+    };
+    setChatSessions(prev => [newSession, ...prev]);
+    setActiveSessionId(newSession.id);
+    return newSession;
+  };
 
-  // Clear conversation history
-  const clearConversation = () => {
-    setConversationHistory([]);
-    setChatMessages([]);
-    localStorage.removeItem(STORAGE_KEY_CONVERSATION);
+  // Switch session
+  const switchSession = (sessionId: string) => {
+    setActiveSessionId(sessionId);
+  };
+
+  // Delete session
+  const deleteSession = (sessionId: string) => {
+    setChatSessions(prev => prev.filter(s => s.id !== sessionId));
+    if (activeSessionId === sessionId) {
+      const remaining = chatSessions.filter(s => s.id !== sessionId);
+      setActiveSessionId(remaining.length > 0 ? remaining[0].id : null);
+    }
+  };
+
+  // Clear current session
+  const clearCurrentSession = () => {
+    if (!activeSessionId) return;
+    setChatSessions(prev => prev.map(s => 
+      s.id === activeSessionId 
+        ? { ...s, messages: [], conversation: [] }
+        : s
+    ));
+  };
+
+  // Add message to current session
+  const addMessage = (msg: Omit<ChatMessage, 'id' | 'timestamp'>) => {
+    const newMsg: ChatMessage = {
+      ...msg,
+      id: Math.random().toString(36).slice(2),
+      timestamp: new Date(),
+    };
+    
+    setChatSessions(prev => prev.map(s => 
+      s.id === activeSessionId 
+        ? { ...s, messages: [...s.messages, newMsg] }
+        : s
+    ));
+  };
+
+  // Update conversation in current session  
+  const updateConversation = (messages: ConversationMessage[]) => {
+    setChatSessions(prev => prev.map(s => 
+      s.id === activeSessionId 
+        ? { ...s, conversation: messages }
+        : s
+    ));
   };
 
   // Auto-scroll to bottom
@@ -237,16 +337,15 @@ const Operator = () => {
   const totalCompleted = activeTasks.reduce((acc, t) => acc + t.sessionsCompleted, 0);
   const totalFailed = activeTasks.reduce((acc, t) => acc + t.sessionsFailed, 0);
 
-  const addMessage = (msg: Omit<ChatMessage, 'id' | 'timestamp'>) => {
-    setChatMessages(prev => [...prev, {
-      ...msg,
-      id: Math.random().toString(36).slice(2),
-      timestamp: new Date(),
-    }]);
-  };
-
   const handleSubmit = async () => {
     if (!command.trim()) return;
+    
+    // Ensure we have an active session
+    let sessionId = activeSessionId;
+    if (!sessionId) {
+      const newSession = createNewSession();
+      sessionId = newSession.id;
+    }
     
     const userCommand = command;
     setCommand('');
@@ -260,7 +359,7 @@ const Operator = () => {
       ...conversationHistory,
       { role: 'user', content: userCommand }
     ];
-    setConversationHistory(newConversation);
+    updateConversation(newConversation);
     
     try {
       // Call AI to analyze intent
@@ -297,7 +396,7 @@ const Operator = () => {
       
       if (aiResponse.type === 'task_plan') {
         // AI determined this is a task request - show planner with pre-parsed plan
-        setConversationHistory(prev => [...prev, { 
+        updateConversation([...newConversation, { 
           role: 'assistant', 
           content: `I'll create a task for: ${aiResponse.task.name}. ${aiResponse.reasoning || ''}` 
         }]);
@@ -307,18 +406,24 @@ const Operator = () => {
           content: aiResponse.reasoning || `Creating task: ${aiResponse.task.name}` 
         });
         
-        setChatMessages(prev => [...prev, {
+        // Add planning message
+        const planningMsg: ChatMessage = {
           id: Math.random().toString(36).slice(2),
           type: 'planning',
           content: userCommand,
           userCommand,
           timestamp: new Date(),
-        }]);
+        };
+        setChatSessions(prev => prev.map(s => 
+          s.id === activeSessionId 
+            ? { ...s, messages: [...s.messages, planningMsg] }
+            : s
+        ));
       } else {
         // Conversational response
         const aiMessage = aiResponse.message || aiResponse.content || JSON.stringify(aiResponse);
         
-        setConversationHistory(prev => [...prev, { role: 'assistant', content: aiMessage }]);
+        updateConversation([...newConversation, { role: 'assistant', content: aiMessage }]);
         addMessage({ type: 'ai', content: aiMessage });
       }
 
@@ -335,7 +440,11 @@ const Operator = () => {
 
   const handlePlanApproved = async (taskId: string, _plan: any) => {
     // Remove planning message
-    setChatMessages(prev => prev.filter(m => m.type !== 'planning'));
+    setChatSessions(prev => prev.map(s => 
+      s.id === activeSessionId 
+        ? { ...s, messages: s.messages.filter(m => m.type !== 'planning') }
+        : s
+    ));
     
     setIsProcessing(true);
     
@@ -354,13 +463,18 @@ const Operator = () => {
       
       // Add supervisor message
       const task = await supabase.from('tasks').select('name').eq('id', taskId).single();
-      setChatMessages(prev => [...prev, {
+      const supervisorMsg: ChatMessage = {
         id: Math.random().toString(36).slice(2),
         type: 'supervisor',
         content: task.data?.name || 'Task',
         taskId,
         timestamp: new Date(),
-      }]);
+      };
+      setChatSessions(prev => prev.map(s => 
+        s.id === activeSessionId 
+          ? { ...s, messages: [...s.messages, supervisorMsg] }
+          : s
+      ));
 
       toast({ title: 'Task started', description: `${result.created} sessions queued` });
       refetchTasks();
@@ -377,12 +491,20 @@ const Operator = () => {
   };
 
   const handlePlanCancelled = () => {
-    setChatMessages(prev => prev.filter(m => m.type !== 'planning'));
+    setChatSessions(prev => prev.map(s => 
+      s.id === activeSessionId 
+        ? { ...s, messages: s.messages.filter(m => m.type !== 'planning') }
+        : s
+    ));
   };
 
   const handleTaskComplete = (taskId: string, success: boolean) => {
     // Remove supervisor message
-    setChatMessages(prev => prev.filter(m => m.taskId !== taskId));
+    setChatSessions(prev => prev.map(s => 
+      s.id === activeSessionId 
+        ? { ...s, messages: s.messages.filter(m => m.taskId !== taskId) }
+        : s
+    ));
     
     addMessage({
       type: success ? 'success' : 'error',
@@ -525,6 +647,52 @@ const Operator = () => {
               <Bot className="w-3.5 h-3.5 text-primary-foreground" />
             </div>
             <span className="font-semibold text-sm">Operator</span>
+            
+            {/* Chat Sessions Dropdown */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="sm" className="h-7 px-2 gap-1 text-muted-foreground">
+                  <MessageSquare className="h-3.5 w-3.5" />
+                  <span className="text-xs max-w-[100px] truncate">
+                    {currentSession?.name || 'New Chat'}
+                  </span>
+                  <ChevronDown className="h-3 w-3" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start" className="w-56">
+                <DropdownMenuItem onClick={() => createNewSession()}>
+                  <Plus className="h-3.5 w-3.5 mr-2" />
+                  New Chat
+                </DropdownMenuItem>
+                {chatSessions.length > 0 && <DropdownMenuSeparator />}
+                {chatSessions.slice(0, 10).map(session => (
+                  <DropdownMenuItem 
+                    key={session.id}
+                    onClick={() => switchSession(session.id)}
+                    className="flex items-center justify-between group"
+                  >
+                    <div className="flex items-center gap-2 flex-1 min-w-0">
+                      <History className="h-3 w-3 flex-shrink-0 text-muted-foreground" />
+                      <span className="truncate text-xs">{session.name}</span>
+                      {session.id === activeSessionId && (
+                        <span className="text-[9px] text-primary">●</span>
+                      )}
+                    </div>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-5 w-5 p-0 opacity-0 group-hover:opacity-100"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        deleteSession(session.id);
+                      }}
+                    >
+                      <Trash2 className="h-3 w-3 text-destructive" />
+                    </Button>
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
           
           <div className="flex items-center gap-2">
@@ -864,11 +1032,11 @@ const Operator = () => {
           <div className="flex items-center justify-between mt-1.5 px-1">
             <span className="text-[9px] text-muted-foreground/50">⌘+Enter to send</span>
             <div className="flex items-center gap-1">
-              {conversationHistory.length > 0 && (
+              {chatMessages.length > 0 && (
                 <Button
                   variant="ghost"
                   size="sm"
-                  onClick={clearConversation}
+                  onClick={clearCurrentSession}
                   className="h-5 text-[9px] text-muted-foreground/50 hover:text-destructive px-1"
                 >
                   <Trash2 className="w-2.5 h-2.5 mr-1" />
