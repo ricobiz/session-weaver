@@ -148,7 +148,7 @@ export class AutonomousExecutor {
 
         // Check if this is a batch response
         const isBatch = Array.isArray(agentResponse.actions) && agentResponse.actions.length > 0;
-        const actions = isBatch ? agentResponse.actions : [agentResponse.action];
+        const actions: AgentAction[] = isBatch ? agentResponse.actions! : [agentResponse.action];
 
         if (isBatch) {
           sessionLog('info', `AI Batch: ${actions.length} actions (confidence: ${(agentResponse.confidence * 100).toFixed(0)}%)`);
