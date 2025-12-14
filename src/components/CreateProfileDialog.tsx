@@ -80,6 +80,9 @@ export function CreateProfileDialog({ open, onOpenChange }: CreateProfileDialogP
         proxy_url: proxyUrl.trim() || null,
         user_agent: userAgent.trim() || null,
         fingerprint: generateFingerprint(),
+        auto_select_proxy: true,
+        preferred_proxy_type: null,
+        preferred_country: null,
       });
 
       toast({
