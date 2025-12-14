@@ -558,6 +558,101 @@ Deno.serve(async (req) => {
     }
 
     // ========================================
+    // LOGS - Get deployment logs
+    // ========================================
+    if (action === 'logs' && body.projectId) {
+      console.log('Getting deployment logs for project:', body.projectId);
+      
+      // First get the project's services and deployments
+      const projectData = await railwayQuery(RAILWAY_API_TOKEN, `
+        query($projectId: String!) {
+          project(id: $projectId) {
+            id
+            name
+            services {
+              edges {
+                node {
+                  id
+                  name
+                  deployments(first: 1) {
+                    edges {
+                      node {
+                        id
+                        status
+                        createdAt
+                        staticUrl
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      `, { projectId: body.projectId });
+
+      const services = (projectData.project?.services?.edges || []).map((e: any) => e.node);
+      const runnerService = services.find((s: any) => s.name.toLowerCase().includes('runner'));
+      const latestDeployment = runnerService?.deployments?.edges?.[0]?.node;
+
+      let buildLogs: any[] = [];
+      if (latestDeployment?.id) {
+        try {
+          const logsData = await railwayQuery(RAILWAY_API_TOKEN, `
+            query($deploymentId: String!) {
+              deploymentLogs(deploymentId: $deploymentId, limit: 100) {
+                message
+                timestamp
+                severity
+              }
+            }
+          `, { deploymentId: latestDeployment.id });
+          
+          buildLogs = logsData.deploymentLogs || [];
+        } catch (e) {
+          console.log('Could not fetch deployment logs:', e);
+          
+          // Try build logs instead
+          try {
+            const buildLogsData = await railwayQuery(RAILWAY_API_TOKEN, `
+              query($deploymentId: String!) {
+                buildLogs(deploymentId: $deploymentId, limit: 100) {
+                  message
+                  timestamp
+                  severity
+                }
+              }
+            `, { deploymentId: latestDeployment.id });
+            
+            buildLogs = buildLogsData.buildLogs || [];
+          } catch (e2) {
+            console.log('Could not fetch build logs:', e2);
+          }
+        }
+      }
+
+      return new Response(
+        JSON.stringify({
+          success: true,
+          project: projectData.project?.name,
+          service: runnerService?.name,
+          deployment: latestDeployment ? {
+            id: latestDeployment.id,
+            status: latestDeployment.status,
+            createdAt: latestDeployment.createdAt,
+            url: latestDeployment.staticUrl,
+          } : null,
+          logs: buildLogs.map((l: any) => ({
+            severity: l.severity || 'INFO',
+            message: l.message,
+            timestamp: l.timestamp,
+          })),
+        }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // ========================================
     // DELETE-PROJECT - Delete entire project
     // ========================================
     if (action === 'delete-project' && body.projectId) {
