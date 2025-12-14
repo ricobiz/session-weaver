@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
@@ -8,16 +8,14 @@ import {
   Camera, 
   Pause, 
   Play, 
-  User, 
-  Activity,
+  User,
   Shield,
   AlertTriangle,
-  CheckCircle2,
-  Clock,
   Loader2,
   Server,
   RefreshCw,
   ImageOff,
+  ExternalLink,
 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from '@/hooks/use-toast';
@@ -43,30 +41,30 @@ interface SessionDetailPanelProps {
   onRefresh?: () => void;
 }
 
-const STATUS_DISPLAY = {
-  queued: { label: 'Waiting in queue', color: 'secondary' },
-  running: { label: 'Working', color: 'default' },
-  paused: { label: 'Paused', color: 'outline' },
-  success: { label: 'Completed', color: 'default' },
-  error: { label: 'Failed', color: 'destructive' },
-} as const;
+const STATUS_BADGES = {
+  queued: { label: 'Queued', variant: 'secondary' as const },
+  running: { label: 'Running', variant: 'default' as const },
+  paused: { label: 'Paused', variant: 'outline' as const },
+  success: { label: 'Complete', variant: 'default' as const },
+  error: { label: 'Failed', variant: 'destructive' as const },
+};
 
-const PROFILE_STATE_LABELS: Record<string, string> = {
-  unknown: 'Unknown',
+const PROFILE_STATES: Record<string, string> = {
+  unknown: 'Checking...',
   logged_out: 'Not logged in',
-  logging_in: 'Logging in...',
+  logging_in: 'Logging in',
   logged_in: 'Logged in',
-  registration_required: 'Needs registration',
-  registering: 'Registering...',
+  registration_required: 'Needs signup',
+  registering: 'Registering',
 };
 
 const ACTION_LABELS: Record<string, string> = {
   open: 'Opening page',
   play: 'Playing content',
-  scroll: 'Scrolling page',
-  click: 'Clicking element',
-  like: 'Liking content',
-  comment: 'Posting comment',
+  scroll: 'Scrolling',
+  click: 'Clicking',
+  like: 'Liking',
+  comment: 'Commenting',
   wait: 'Waiting',
 };
 
@@ -77,20 +75,17 @@ export function SessionDetailPanel({ session, onClose, onRefresh }: SessionDetai
   const [isActioning, setIsActioning] = useState(false);
   const [pollingForScreenshot, setPollingForScreenshot] = useState(false);
 
-  const statusInfo = STATUS_DISPLAY[session.status as keyof typeof STATUS_DISPLAY];
+  const statusBadge = STATUS_BADGES[session.status as keyof typeof STATUS_BADGES] || STATUS_BADGES.queued;
   const isRunning = session.status === 'running';
   const isPaused = session.status === 'paused';
-  const hasCaptcha = session.captcha_status && 
-    !['solved', null].includes(session.captcha_status);
+  const hasCaptcha = session.captcha_status && !['solved', null].includes(session.captcha_status);
 
-  // Update screenshot when session changes
   useEffect(() => {
     if (session.last_screenshot_url && session.last_screenshot_url !== screenshot) {
       setScreenshot(session.last_screenshot_url);
     }
   }, [session.last_screenshot_url]);
 
-  // Poll for screenshot when requested
   useEffect(() => {
     if (!pollingForScreenshot) return;
 
@@ -115,7 +110,6 @@ export function SessionDetailPanel({ session, onClose, onRefresh }: SessionDetai
       }
     }, 1500);
 
-    // Stop polling after 10 seconds
     const timeout = setTimeout(() => {
       setPollingForScreenshot(false);
       setIsCapturing(false);
@@ -130,7 +124,6 @@ export function SessionDetailPanel({ session, onClose, onRefresh }: SessionDetai
   const handleScreenshot = async () => {
     setIsCapturing(true);
     try {
-      // Request screenshot capture from runner via edge function
       const response = await fetch(
         `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/session-api/sessions/${session.id}/screenshot`,
         { method: 'POST', headers: { 'Content-Type': 'application/json' } }
@@ -141,39 +134,28 @@ export function SessionDetailPanel({ session, onClose, onRefresh }: SessionDetai
       const data = await response.json();
       
       if (data.status === 'requested') {
-        // Start polling for the new screenshot
         setPollingForScreenshot(true);
-        toast({ title: 'Screenshot requested', description: 'Waiting for capture...' });
+        toast({ title: 'Capturing screenshot...' });
       } else if (data.screenshot_url) {
-        // Use cached screenshot
         setScreenshot(data.screenshot_url);
         setIsCapturing(false);
-        toast({ title: 'Showing last known screenshot' });
       } else {
         setIsCapturing(false);
         toast({ title: 'No screenshot available', variant: 'destructive' });
       }
     } catch (error) {
-      console.error('Screenshot request failed:', error);
       setIsCapturing(false);
-      
-      // Fallback: use last known screenshot
       if (session.last_screenshot_url) {
         setScreenshot(session.last_screenshot_url);
-        toast({ title: 'Showing last known screenshot' });
-      } else {
-        toast({ title: 'Screenshot unavailable', variant: 'destructive' });
       }
+      toast({ title: 'Screenshot unavailable', variant: 'destructive' });
     }
   };
 
   const handlePause = async () => {
     setIsActioning(true);
     try {
-      await supabase
-        .from('sessions')
-        .update({ status: 'paused' })
-        .eq('id', session.id);
+      await supabase.from('sessions').update({ status: 'paused' }).eq('id', session.id);
       toast({ title: 'Session paused' });
       onRefresh?.();
     } catch {
@@ -186,10 +168,7 @@ export function SessionDetailPanel({ session, onClose, onRefresh }: SessionDetai
   const handleResume = async () => {
     setIsActioning(true);
     try {
-      await supabase
-        .from('sessions')
-        .update({ status: 'queued' })
-        .eq('id', session.id);
+      await supabase.from('sessions').update({ status: 'queued' }).eq('id', session.id);
       toast({ title: 'Session resumed' });
       onRefresh?.();
     } catch {
@@ -200,51 +179,48 @@ export function SessionDetailPanel({ session, onClose, onRefresh }: SessionDetai
   };
 
   return (
-    <Card className="border-primary/20">
-      <CardHeader className="pb-2">
+    <Card className="border-primary/30 bg-card/80 backdrop-blur">
+      <CardHeader className="p-4 pb-3">
         <div className="flex items-center justify-between">
-          <CardTitle className="text-sm font-medium flex items-center gap-2">
+          <div className="flex items-center gap-2">
             <User className="w-4 h-4 text-primary" />
-            {session.profiles?.name || 'Session'}
-          </CardTitle>
-          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={onClose}>
+            <span className="font-medium">{session.profiles?.name || 'Session'}</span>
+            <Badge variant={statusBadge.variant} className="text-[10px] h-5">
+              {statusBadge.label}
+            </Badge>
+          </div>
+          <Button variant="ghost" size="icon" className="h-7 w-7 -mr-2" onClick={onClose}>
             <X className="w-4 h-4" />
           </Button>
         </div>
       </CardHeader>
-      <CardContent className="space-y-4">
-        {/* Status Row */}
-        <div className="flex items-center justify-between">
-          <Badge variant={statusInfo?.color as any || 'secondary'}>
-            {statusInfo?.label || session.status}
-          </Badge>
+      
+      <CardContent className="p-4 pt-0 space-y-4">
+        {/* Current Activity */}
+        <div className="p-3 rounded-lg bg-muted/30 border border-border/50">
+          <div className="flex items-center gap-2 text-sm">
+            {isRunning && <Loader2 className="w-4 h-4 animate-spin text-primary" />}
+            {isPaused && <Pause className="w-4 h-4 text-warning" />}
+            <span className="font-medium">
+              {isRunning 
+                ? (ACTION_LABELS[session.current_action || ''] || 'Processing...')
+                : statusBadge.label
+              }
+            </span>
+          </div>
           {session.runner_id && (
-            <div className="flex items-center gap-1 text-xs text-muted-foreground">
+            <div className="flex items-center gap-1.5 mt-2 text-xs text-muted-foreground">
               <Server className="w-3 h-3" />
-              Worker {session.runner_id.slice(-4)}
+              Worker #{session.runner_id.slice(-4)}
             </div>
           )}
         </div>
 
-        {/* Current Action */}
-        <div className="p-2 rounded bg-muted/30">
-          <div className="flex items-center gap-2 text-sm">
-            {isRunning && <Loader2 className="w-3.5 h-3.5 animate-spin text-primary" />}
-            {isPaused && <Pause className="w-3.5 h-3.5 text-warning" />}
-            <span>
-              {isRunning 
-                ? (ACTION_LABELS[session.current_action || ''] || 'Processing...')
-                : statusInfo?.label
-              }
-            </span>
-          </div>
-        </div>
-
         {/* Progress */}
-        <div className="space-y-1.5">
-          <div className="flex items-center justify-between text-xs text-muted-foreground">
-            <span>Progress</span>
-            <span className="font-mono">{session.progress}%</span>
+        <div className="space-y-2">
+          <div className="flex items-center justify-between text-xs">
+            <span className="text-muted-foreground">Progress</span>
+            <span className="font-mono font-medium">{session.progress}%</span>
           </div>
           <Progress value={session.progress} className="h-2" />
           <div className="text-xs text-muted-foreground text-right">
@@ -252,43 +228,49 @@ export function SessionDetailPanel({ session, onClose, onRefresh }: SessionDetai
           </div>
         </div>
 
-        {/* Profile State */}
-        <div className="flex items-center gap-2 text-xs">
-          <User className="w-3 h-3 text-muted-foreground" />
-          <span className="text-muted-foreground">Account:</span>
-          <span>{PROFILE_STATE_LABELS[session.profile_state || 'unknown']}</span>
+        {/* Info Grid */}
+        <div className="grid grid-cols-2 gap-2 text-xs">
+          <div className="p-2 rounded bg-muted/20">
+            <div className="text-muted-foreground mb-0.5">Account</div>
+            <div className="font-medium">{PROFILE_STATES[session.profile_state || 'unknown']}</div>
+          </div>
+          <div className="p-2 rounded bg-muted/20">
+            <div className="text-muted-foreground mb-0.5">Captcha</div>
+            <div className="font-medium flex items-center gap-1">
+              {hasCaptcha ? (
+                <>
+                  <Shield className="w-3 h-3 text-warning" />
+                  <span className="text-warning">Solving...</span>
+                </>
+              ) : (
+                <span className="text-success">Clear</span>
+              )}
+            </div>
+          </div>
         </div>
 
-        {/* Captcha Status */}
-        {hasCaptcha && (
-          <div className="flex items-center gap-2 p-2 rounded bg-warning/10 text-warning text-xs">
-            <Shield className="w-4 h-4" />
-            <span>Captcha detected - resolving automatically</span>
-          </div>
-        )}
-
-        {/* Error Message (simplified) */}
+        {/* Error Display */}
         {session.error_message && (
-          <div className="p-2 rounded bg-destructive/10 text-destructive text-xs">
-            <div className="flex items-start gap-2">
+          <div className="p-3 rounded-lg bg-destructive/10 border border-destructive/20 text-xs">
+            <div className="flex items-start gap-2 text-destructive">
               <AlertTriangle className="w-4 h-4 flex-shrink-0 mt-0.5" />
-              <span>Something went wrong. System will retry if possible.</span>
+              <span>Error detected. System will retry automatically.</span>
             </div>
           </div>
         )}
 
         {/* Screenshot */}
-        <div className="space-y-1.5">
-          <div className="flex items-center justify-between text-xs text-muted-foreground">
-            <span className="flex items-center gap-1.5">
+        <div className="space-y-2">
+          <div className="flex items-center justify-between text-xs">
+            <span className="text-muted-foreground flex items-center gap-1.5">
               <Camera className="w-3 h-3" />
               Screenshot
             </span>
             {screenshotTime && (
-              <span className="font-mono text-[10px]">{screenshotTime}</span>
+              <span className="font-mono text-[10px] text-muted-foreground/60">{screenshotTime}</span>
             )}
           </div>
-          <div className="rounded border border-border overflow-hidden aspect-video bg-muted relative">
+          <div className="relative rounded-lg border border-border/50 overflow-hidden aspect-video bg-muted/20">
             {screenshot ? (
               <img 
                 src={screenshot} 
@@ -296,38 +278,47 @@ export function SessionDetailPanel({ session, onClose, onRefresh }: SessionDetai
                 className="w-full h-full object-contain"
               />
             ) : (
-              <div className="absolute inset-0 flex flex-col items-center justify-center text-muted-foreground">
-                <ImageOff className="w-8 h-8 mb-2 opacity-50" />
-                <span className="text-xs">No screenshot available</span>
-                <span className="text-[10px]">Click button below to capture</span>
+              <div className="absolute inset-0 flex flex-col items-center justify-center">
+                <ImageOff className="w-8 h-8 text-muted-foreground/30 mb-2" />
+                <span className="text-xs text-muted-foreground/60">No screenshot yet</span>
               </div>
             )}
             {(isCapturing || pollingForScreenshot) && (
-              <div className="absolute inset-0 bg-background/80 flex items-center justify-center">
-                <div className="text-center">
-                  <RefreshCw className="w-6 h-6 animate-spin mx-auto mb-2 text-primary" />
-                  <span className="text-xs text-muted-foreground">Capturing...</span>
-                </div>
+              <div className="absolute inset-0 bg-background/80 backdrop-blur-sm flex items-center justify-center">
+                <RefreshCw className="w-6 h-6 animate-spin text-primary" />
               </div>
             )}
           </div>
         </div>
 
-        {/* Action Buttons */}
+        {/* Current URL */}
+        {session.current_url && (
+          <a 
+            href={session.current_url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center gap-2 p-2 rounded bg-muted/20 text-xs text-muted-foreground hover:text-foreground transition-colors truncate"
+          >
+            <ExternalLink className="w-3 h-3 flex-shrink-0" />
+            <span className="truncate">{session.current_url}</span>
+          </a>
+        )}
+
+        {/* Actions */}
         <div className="flex gap-2">
           <Button 
             size="sm" 
             variant="outline" 
             onClick={handleScreenshot}
             disabled={isCapturing}
-            className="flex-1 gap-1.5"
+            className="flex-1"
           >
             {isCapturing ? (
-              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              <Loader2 className="w-4 h-4 animate-spin" />
             ) : (
-              <Camera className="w-3.5 h-3.5" />
+              <Camera className="w-4 h-4" />
             )}
-            Screenshot
+            <span className="ml-1.5">Screenshot</span>
           </Button>
 
           {isRunning && (
@@ -336,10 +327,10 @@ export function SessionDetailPanel({ session, onClose, onRefresh }: SessionDetai
               variant="outline"
               onClick={handlePause}
               disabled={isActioning}
-              className="flex-1 gap-1.5"
+              className="flex-1"
             >
-              <Pause className="w-3.5 h-3.5" />
-              Pause
+              <Pause className="w-4 h-4" />
+              <span className="ml-1.5">Pause</span>
             </Button>
           )}
 
@@ -348,10 +339,10 @@ export function SessionDetailPanel({ session, onClose, onRefresh }: SessionDetai
               size="sm"
               onClick={handleResume}
               disabled={isActioning}
-              className="flex-1 gap-1.5"
+              className="flex-1"
             >
-              <Play className="w-3.5 h-3.5" />
-              Resume
+              <Play className="w-4 h-4" />
+              <span className="ml-1.5">Resume</span>
             </Button>
           )}
         </div>

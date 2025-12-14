@@ -3,10 +3,11 @@ import { Link } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { Separator } from '@/components/ui/separator';
 import { toast } from '@/hooks/use-toast';
 import { useQuery } from '@tanstack/react-query';
 import { 
@@ -17,9 +18,13 @@ import {
   CheckCircle2,
   XCircle,
   Clock,
-  DollarSign,
   Activity,
   MonitorPlay,
+  Zap,
+  Target,
+  TrendingUp,
+  Bot,
+  Sparkles,
 } from 'lucide-react';
 import { OperatorBalanceHeader } from '@/components/operator/OperatorBalanceHeader';
 import { ActiveSessionsList } from '@/components/operator/ActiveSessionsList';
@@ -33,6 +38,7 @@ interface TaskSummary {
   sessionsTotal: number;
   sessionsCompleted: number;
   sessionsFailed: number;
+  sessionsRunning: number;
   startedAt: string | null;
   estimatedCost: number;
 }
@@ -57,7 +63,7 @@ interface ActiveSession {
 const Operator = () => {
   const [command, setCommand] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
-  const [statusMessage, setStatusMessage] = useState('Ready. Tell me what you need.');
+  const [statusMessage, setStatusMessage] = useState('');
   const [selectedModel, setSelectedModel] = useState('google/gemini-2.5-flash');
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
 
@@ -83,6 +89,7 @@ const Operator = () => {
           
           const completed = sessions?.filter(s => s.status === 'success').length || 0;
           const failed = sessions?.filter(s => s.status === 'error').length || 0;
+          const running = sessions?.filter(s => s.status === 'running').length || 0;
           const total = sessions?.length || 0;
           const progress = total > 0 ? Math.round((completed / total) * 100) : 0;
           
@@ -94,6 +101,7 @@ const Operator = () => {
             sessionsTotal: total,
             sessionsCompleted: completed,
             sessionsFailed: failed,
+            sessionsRunning: running,
             startedAt: task.started_at,
             estimatedCost: total * 0.02,
           };
@@ -148,7 +156,7 @@ const Operator = () => {
   const totalActive = activeTasks.filter(t => t.status === 'active').length;
   const totalCompleted = activeTasks.reduce((acc, t) => acc + t.sessionsCompleted, 0);
   const totalFailed = activeTasks.reduce((acc, t) => acc + t.sessionsFailed, 0);
-  const totalCost = activeTasks.reduce((acc, t) => acc + t.estimatedCost, 0);
+  const totalRunning = activeSessions.filter(s => s.status === 'running').length;
 
   const handleSubmit = async () => {
     if (!command.trim()) return;
@@ -157,7 +165,6 @@ const Operator = () => {
     setStatusMessage('Understanding your request...');
 
     try {
-      // Parse command to extract parameters
       const lowerCommand = command.toLowerCase();
       
       let platform = 'web';
@@ -166,11 +173,9 @@ const Operator = () => {
       else if (lowerCommand.includes('soundcloud')) platform = 'soundcloud';
       else if (lowerCommand.includes('tiktok')) platform = 'tiktok';
       
-      // Extract URL
       const urlMatch = command.match(/https?:\/\/[^\s]+/);
       const targetUrl = urlMatch ? urlMatch[0] : null;
       
-      // Extract profile and run counts
       const profileMatch = command.match(/(\d+)\s*(?:profiles?|accounts?|users?)/i);
       const runMatch = command.match(/(\d+)\s*(?:times?|runs?|x)/i);
       const profileCount = profileMatch ? parseInt(profileMatch[1]) : 3;
@@ -178,14 +183,11 @@ const Operator = () => {
 
       setStatusMessage('AI is planning the scenario...');
 
-      // Call the Planner API to generate and execute
       const response = await fetch(
         `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/session-api/planner/execute`,
         {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             goal: command,
             platform,
@@ -208,19 +210,19 @@ const Operator = () => {
         throw new Error(result.error || 'Planning failed');
       }
 
-      setStatusMessage(`Running: ${result.sessions_created} sessions with AI-generated plan`);
+      setStatusMessage('');
       setCommand('');
       refetchTasks();
       refetchSessions();
       
       toast({ 
         title: 'Task started', 
-        description: `${result.sessions_created} sessions queued. ETA: ${Math.round((result.estimated_duration_seconds || 60) / 60)} min` 
+        description: `${result.sessions_created} sessions queued` 
       });
 
     } catch (error) {
       console.error('Task creation failed:', error);
-      setStatusMessage('Failed to plan task. Try again.');
+      setStatusMessage('');
       toast({ 
         title: 'Planning failed', 
         description: error instanceof Error ? error.message : 'Unknown error',
@@ -247,34 +249,34 @@ const Operator = () => {
       refetchTasks();
       refetchSessions();
       toast({ title: 'Task stopped' });
-    } catch (error) {
-      toast({ title: 'Error', description: 'Failed to stop task.', variant: 'destructive' });
-    }
-  };
-
-  const getStatusIcon = (status: string) => {
-    switch (status) {
-      case 'active': return <Activity className="w-4 h-4 text-primary animate-pulse" />;
-      case 'paused': return <Clock className="w-4 h-4 text-warning" />;
-      default: return <Clock className="w-4 h-4 text-muted-foreground" />;
+    } catch {
+      toast({ title: 'Failed to stop task', variant: 'destructive' });
     }
   };
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
       {/* Header */}
-      <header className="border-b border-border/50 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-        <div className="container mx-auto px-4 py-3 flex items-center justify-between">
-          <h1 className="text-lg font-semibold text-foreground">Operator</h1>
+      <header className="sticky top-0 z-50 border-b border-border/40 bg-background/80 backdrop-blur-xl">
+        <div className="container mx-auto px-4 h-14 flex items-center justify-between">
           <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-primary to-accent flex items-center justify-center">
+                <Bot className="w-4 h-4 text-primary-foreground" />
+              </div>
+              <span className="font-semibold text-lg">Operator</span>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
             <OperatorBalanceHeader 
               selectedModel={selectedModel}
               onModelChange={setSelectedModel}
             />
-            <Button variant="ghost" size="sm" asChild className="gap-1.5 text-muted-foreground">
+            <Separator orientation="vertical" className="h-6 mx-1" />
+            <Button variant="ghost" size="sm" asChild className="gap-1.5 text-muted-foreground hover:text-foreground">
               <Link to="/dashboard">
                 <Code2 className="h-4 w-4" />
-                Developer Mode
+                <span className="hidden sm:inline">Developer</span>
               </Link>
             </Button>
           </div>
@@ -283,164 +285,250 @@ const Operator = () => {
 
       {/* Main Content */}
       <main className="flex-1 container mx-auto px-4 py-6">
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Left: Command + Tasks */}
-          <div className="lg:col-span-2 space-y-6">
-            {/* Status Message */}
-            <p className="text-center text-muted-foreground text-sm">
-              {statusMessage}
-            </p>
-
-            {/* Command Input */}
-            <Card>
-              <CardContent className="p-4">
-                <Textarea
-                  value={command}
-                  onChange={(e) => setCommand(e.target.value)}
-                  placeholder="What needs to be done? (e.g., Play this track on Spotify with 5 profiles)"
-                  className="min-h-[80px] resize-none border-0 focus-visible:ring-0 text-base"
-                  disabled={isProcessing}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && e.metaKey) handleSubmit();
-                  }}
-                />
-                <div className="flex items-center justify-between mt-3 pt-3 border-t border-border/50">
-                  <span className="text-xs text-muted-foreground">
-                    ⌘ + Enter to send
+        <div className="max-w-6xl mx-auto">
+          {/* Command Section */}
+          <div className="mb-8">
+            <Card className="overflow-hidden border-border/50 bg-card/50 backdrop-blur">
+              <CardContent className="p-0">
+                {/* Input Area */}
+                <div className="p-4">
+                  <div className="flex items-start gap-3">
+                    <div className="w-10 h-10 rounded-full bg-gradient-to-br from-primary/20 to-accent/20 flex items-center justify-center flex-shrink-0">
+                      <Sparkles className="w-5 h-5 text-primary" />
+                    </div>
+                    <div className="flex-1">
+                      <Textarea
+                        value={command}
+                        onChange={(e) => setCommand(e.target.value)}
+                        placeholder="What needs to be done? Example: Play this Spotify track with 5 profiles https://open.spotify.com/track/..."
+                        className="min-h-[60px] resize-none border-0 bg-transparent focus-visible:ring-0 text-base p-0 placeholder:text-muted-foreground/60"
+                        disabled={isProcessing}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) handleSubmit();
+                        }}
+                      />
+                      {statusMessage && (
+                        <p className="text-sm text-primary mt-2 flex items-center gap-2">
+                          <Loader2 className="w-3 h-3 animate-spin" />
+                          {statusMessage}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+                
+                {/* Action Bar */}
+                <div className="px-4 py-3 bg-muted/30 border-t border-border/50 flex items-center justify-between">
+                  <span className="text-xs text-muted-foreground hidden sm:block">
+                    ⌘/Ctrl + Enter to run
                   </span>
-                  <Button 
-                    onClick={handleSubmit} 
-                    disabled={isProcessing || !command.trim()}
-                    size="sm"
-                    className="gap-2"
-                  >
-                    {isProcessing ? (
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                    ) : (
-                      <Send className="w-4 h-4" />
-                    )}
-                    {isProcessing ? 'Processing...' : 'Run'}
-                  </Button>
+                  <div className="flex items-center gap-2 ml-auto">
+                    <Button 
+                      onClick={handleSubmit} 
+                      disabled={isProcessing || !command.trim()}
+                      className="gap-2 min-w-[100px]"
+                    >
+                      {isProcessing ? (
+                        <>
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                          Planning...
+                        </>
+                      ) : (
+                        <>
+                          <Send className="w-4 h-4" />
+                          Run
+                        </>
+                      )}
+                    </Button>
+                  </div>
                 </div>
               </CardContent>
             </Card>
-
-            {/* Stats Summary */}
-            <div className="grid grid-cols-4 gap-3">
-              <div className="text-center p-3 rounded-lg bg-muted/30">
-                <div className="text-2xl font-bold text-foreground">{totalActive}</div>
-                <div className="text-xs text-muted-foreground">Active</div>
-              </div>
-              <div className="text-center p-3 rounded-lg bg-muted/30">
-                <div className="text-2xl font-bold text-success">{totalCompleted}</div>
-                <div className="text-xs text-muted-foreground">Done</div>
-              </div>
-              <div className="text-center p-3 rounded-lg bg-muted/30">
-                <div className="text-2xl font-bold text-destructive">{totalFailed}</div>
-                <div className="text-xs text-muted-foreground">Failed</div>
-              </div>
-              <div className="text-center p-3 rounded-lg bg-muted/30">
-                <div className="text-2xl font-bold text-foreground">${totalCost.toFixed(2)}</div>
-                <div className="text-xs text-muted-foreground">Est. Cost</div>
-              </div>
-            </div>
-
-            {/* Active Tasks */}
-            {activeTasks.length > 0 && (
-              <div className="space-y-3">
-                <h3 className="text-sm font-medium text-muted-foreground">Active Tasks</h3>
-                {activeTasks.map((task) => (
-                  <Card key={task.id} className="overflow-hidden">
-                    <CardContent className="p-4">
-                      <div className="flex items-start justify-between mb-3">
-                        <div className="flex items-center gap-2">
-                          {getStatusIcon(task.status)}
-                          <span className="text-sm font-medium truncate max-w-[300px]">
-                            {task.name}
-                          </span>
-                        </div>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => handleStop(task.id)}
-                          className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive"
-                        >
-                          <Square className="w-3.5 h-3.5" />
-                        </Button>
-                      </div>
-                      
-                      <Progress value={task.progress} className="h-2 mb-2" />
-                      
-                      <div className="flex items-center justify-between text-xs text-muted-foreground">
-                        <div className="flex items-center gap-3">
-                          <span className="flex items-center gap-1">
-                            <CheckCircle2 className="w-3 h-3 text-success" />
-                            {task.sessionsCompleted}
-                          </span>
-                          <span className="flex items-center gap-1">
-                            <XCircle className="w-3 h-3 text-destructive" />
-                            {task.sessionsFailed}
-                          </span>
-                          <span>of {task.sessionsTotal}</span>
-                        </div>
-                        <Badge variant="secondary" className="text-xs">
-                          {task.progress}%
-                        </Badge>
-                      </div>
-                    </CardContent>
-                  </Card>
-                ))}
-              </div>
-            )}
-
-            {activeTasks.length === 0 && !isProcessing && (
-              <div className="text-center py-12 text-muted-foreground">
-                <p className="text-sm">No active tasks</p>
-                <p className="text-xs mt-1">Describe what you need above</p>
-              </div>
-            )}
           </div>
 
-          {/* Right: Sessions Panel */}
-          <div className="space-y-4">
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium flex items-center gap-2">
-                  <MonitorPlay className="w-4 h-4 text-primary" />
-                  Active Sessions
-                  {activeSessions.length > 0 && (
-                    <Badge variant="secondary" className="ml-auto">
-                      {activeSessions.length}
-                    </Badge>
-                  )}
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <ScrollArea className="h-[300px] pr-2">
-                  <ActiveSessionsList 
-                    sessions={activeSessions}
-                    onSessionClick={setSelectedSessionId}
-                    selectedSessionId={selectedSessionId || undefined}
-                  />
-                </ScrollArea>
+          {/* Stats Row */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
+            <Card className="bg-card/50 border-border/50">
+              <CardContent className="p-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
+                    <Zap className="w-5 h-5 text-primary" />
+                  </div>
+                  <div>
+                    <div className="text-2xl font-bold">{totalRunning}</div>
+                    <div className="text-xs text-muted-foreground">Running Now</div>
+                  </div>
+                </div>
               </CardContent>
             </Card>
+            <Card className="bg-card/50 border-border/50">
+              <CardContent className="p-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-lg bg-accent/10 flex items-center justify-center">
+                    <Target className="w-5 h-5 text-accent" />
+                  </div>
+                  <div>
+                    <div className="text-2xl font-bold">{totalActive}</div>
+                    <div className="text-xs text-muted-foreground">Active Tasks</div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+            <Card className="bg-card/50 border-border/50">
+              <CardContent className="p-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-lg bg-success/10 flex items-center justify-center">
+                    <TrendingUp className="w-5 h-5 text-success" />
+                  </div>
+                  <div>
+                    <div className="text-2xl font-bold">{totalCompleted}</div>
+                    <div className="text-xs text-muted-foreground">Completed</div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+            <Card className="bg-card/50 border-border/50">
+              <CardContent className="p-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-lg bg-destructive/10 flex items-center justify-center">
+                    <XCircle className="w-5 h-5 text-destructive" />
+                  </div>
+                  <div>
+                    <div className="text-2xl font-bold">{totalFailed}</div>
+                    <div className="text-xs text-muted-foreground">Failed</div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
 
-            {/* Session Detail Panel */}
-            {selectedSession && (
-              <SessionDetailPanel 
-                session={selectedSession}
-                onClose={() => setSelectedSessionId(null)}
-                onRefresh={() => refetchSessions()}
-              />
-            )}
+          {/* Main Grid: Tasks + Sessions */}
+          <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
+            {/* Tasks Column */}
+            <div className="lg:col-span-3 space-y-4">
+              <div className="flex items-center justify-between">
+                <h2 className="text-sm font-medium text-muted-foreground flex items-center gap-2">
+                  <Activity className="w-4 h-4" />
+                  Active Tasks
+                </h2>
+                {activeTasks.length > 0 && (
+                  <Badge variant="secondary" className="text-xs">
+                    {activeTasks.length}
+                  </Badge>
+                )}
+              </div>
+
+              {activeTasks.length > 0 ? (
+                <div className="space-y-3">
+                  {activeTasks.map((task) => (
+                    <Card key={task.id} className="overflow-hidden bg-card/50 border-border/50 hover:border-border transition-colors">
+                      <CardContent className="p-4">
+                        <div className="flex items-start justify-between mb-3">
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 mb-1">
+                              {task.status === 'active' ? (
+                                <Activity className="w-4 h-4 text-primary animate-pulse flex-shrink-0" />
+                              ) : (
+                                <Clock className="w-4 h-4 text-muted-foreground flex-shrink-0" />
+                              )}
+                              <span className="font-medium truncate">{task.name}</span>
+                            </div>
+                            <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                              <span className="flex items-center gap-1">
+                                <div className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
+                                {task.sessionsRunning} working
+                              </span>
+                              <span className="flex items-center gap-1">
+                                <CheckCircle2 className="w-3 h-3 text-success" />
+                                {task.sessionsCompleted}
+                              </span>
+                              <span className="flex items-center gap-1">
+                                <XCircle className="w-3 h-3 text-destructive" />
+                                {task.sessionsFailed}
+                              </span>
+                              <span>/ {task.sessionsTotal} total</span>
+                            </div>
+                          </div>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => handleStop(task.id)}
+                            className="h-8 w-8 p-0 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+                          >
+                            <Square className="w-4 h-4" />
+                          </Button>
+                        </div>
+                        
+                        <div className="space-y-1">
+                          <Progress value={task.progress} className="h-2" />
+                          <div className="flex items-center justify-between text-xs text-muted-foreground">
+                            <span>{task.progress}% complete</span>
+                            {task.startedAt && (
+                              <span>{new Date(task.startedAt).toLocaleTimeString()}</span>
+                            )}
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+              ) : (
+                <Card className="bg-card/30 border-dashed">
+                  <CardContent className="py-12 text-center">
+                    <div className="w-12 h-12 rounded-full bg-muted/50 flex items-center justify-center mx-auto mb-4">
+                      <Target className="w-6 h-6 text-muted-foreground" />
+                    </div>
+                    <p className="text-muted-foreground text-sm">No active tasks</p>
+                    <p className="text-muted-foreground/60 text-xs mt-1">Describe what you need above</p>
+                  </CardContent>
+                </Card>
+              )}
+            </div>
+
+            {/* Sessions Column */}
+            <div className="lg:col-span-2 space-y-4">
+              <div className="flex items-center justify-between">
+                <h2 className="text-sm font-medium text-muted-foreground flex items-center gap-2">
+                  <MonitorPlay className="w-4 h-4" />
+                  Workers
+                </h2>
+                {activeSessions.length > 0 && (
+                  <Badge variant="secondary" className="text-xs">
+                    {activeSessions.filter(s => s.status === 'running').length} active
+                  </Badge>
+                )}
+              </div>
+
+              <Card className="bg-card/50 border-border/50">
+                <CardContent className="p-0">
+                  <ScrollArea className="h-[400px]">
+                    <div className="p-3">
+                      <ActiveSessionsList 
+                        sessions={activeSessions}
+                        onSessionClick={setSelectedSessionId}
+                        selectedSessionId={selectedSessionId || undefined}
+                      />
+                    </div>
+                  </ScrollArea>
+                </CardContent>
+              </Card>
+
+              {/* Session Detail Panel */}
+              {selectedSession && (
+                <SessionDetailPanel 
+                  session={selectedSession}
+                  onClose={() => setSelectedSessionId(null)}
+                  onRefresh={() => refetchSessions()}
+                />
+              )}
+            </div>
           </div>
         </div>
       </main>
 
       {/* Footer */}
-      <footer className="py-4 text-center text-xs text-muted-foreground border-t border-border/50">
-        Handles: scheduling, retries, captchas, failures, recovery
+      <footer className="py-3 text-center text-xs text-muted-foreground/60 border-t border-border/30">
+        Auto-scheduling • Auto-retry • Captcha handling • Session recovery
       </footer>
     </div>
   );
