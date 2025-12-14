@@ -707,6 +707,63 @@ serve(async (req) => {
       });
     }
 
+    // POST /warmup - Perform browser warmup
+    if (req.method === 'POST' && path === '/warmup') {
+      const { sites } = await req.json().catch(() => ({}));
+      
+      console.log(`[runner-test] Starting browser warmup...`);
+      
+      const result = await fetch(`${RUNNER_API_URL}/execute`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          action: 'warmup',
+          sites: sites || undefined
+        })
+      }).then(r => r.json());
+      
+      return new Response(JSON.stringify(result), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    // POST /add-cookies - Add cookies for a domain
+    if (req.method === 'POST' && path === '/add-cookies') {
+      const { domain } = await req.json();
+      
+      if (!domain) {
+        return new Response(JSON.stringify({ error: 'Domain required' }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+      
+      console.log(`[runner-test] Adding cookies for domain: ${domain}`);
+      
+      const result = await fetch(`${RUNNER_API_URL}/execute`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'add-cookies', domain })
+      }).then(r => r.json());
+      
+      return new Response(JSON.stringify(result), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    // GET /cookies - Get all browser cookies
+    if (req.method === 'GET' && path === '/cookies') {
+      const result = await fetch(`${RUNNER_API_URL}/execute`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'get-cookies' })
+      }).then(r => r.json());
+      
+      return new Response(JSON.stringify(result), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
     return new Response(JSON.stringify({ error: 'Not found' }), {
       status: 404,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
