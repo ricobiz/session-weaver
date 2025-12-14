@@ -9,10 +9,12 @@ interface StatusIndicatorProps {
 
 const statusConfig: Record<SessionStatus, { label: string; className: string }> = {
   idle: { label: 'Idle', className: 'status-dot-idle' },
+  queued: { label: 'Queued', className: 'status-dot-idle' },
   running: { label: 'Running', className: 'status-dot-warning animate-pulse-glow' },
   success: { label: 'Complete', className: 'status-dot-success' },
   error: { label: 'Failed', className: 'status-dot-error' },
   paused: { label: 'Paused', className: 'status-dot-idle' },
+  cancelled: { label: 'Cancelled', className: 'status-dot-idle' },
 };
 
 const sizeClasses = {
