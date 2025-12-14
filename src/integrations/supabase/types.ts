@@ -253,10 +253,56 @@ export type Database = {
         }
         Relationships: []
       }
+      profile_proxy_bindings: {
+        Row: {
+          bound_at: string
+          id: string
+          is_sticky: boolean | null
+          last_used_at: string | null
+          profile_id: string
+          proxy_id: string
+          session_count: number | null
+        }
+        Insert: {
+          bound_at?: string
+          id?: string
+          is_sticky?: boolean | null
+          last_used_at?: string | null
+          profile_id: string
+          proxy_id: string
+          session_count?: number | null
+        }
+        Update: {
+          bound_at?: string
+          id?: string
+          is_sticky?: boolean | null
+          last_used_at?: string | null
+          profile_id?: string
+          proxy_id?: string
+          session_count?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "profile_proxy_bindings_profile_id_fkey"
+            columns: ["profile_id"]
+            isOneToOne: true
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "profile_proxy_bindings_proxy_id_fkey"
+            columns: ["proxy_id"]
+            isOneToOne: false
+            referencedRelation: "proxies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       profiles: {
         Row: {
           auth_checked_at: string | null
           auth_state: string | null
+          auto_select_proxy: boolean | null
           created_at: string
           email: string
           fingerprint: Json | null
@@ -266,6 +312,8 @@ export type Database = {
           name: string
           network_config: Json | null
           password_hash: string | null
+          preferred_country: string | null
+          preferred_proxy_type: Database["public"]["Enums"]["proxy_type"] | null
           proxy_url: string | null
           session_context: Json | null
           sessions_run: number | null
@@ -276,6 +324,7 @@ export type Database = {
         Insert: {
           auth_checked_at?: string | null
           auth_state?: string | null
+          auto_select_proxy?: boolean | null
           created_at?: string
           email: string
           fingerprint?: Json | null
@@ -285,6 +334,10 @@ export type Database = {
           name: string
           network_config?: Json | null
           password_hash?: string | null
+          preferred_country?: string | null
+          preferred_proxy_type?:
+            | Database["public"]["Enums"]["proxy_type"]
+            | null
           proxy_url?: string | null
           session_context?: Json | null
           sessions_run?: number | null
@@ -295,6 +348,7 @@ export type Database = {
         Update: {
           auth_checked_at?: string | null
           auth_state?: string | null
+          auto_select_proxy?: boolean | null
           created_at?: string
           email?: string
           fingerprint?: Json | null
@@ -304,12 +358,136 @@ export type Database = {
           name?: string
           network_config?: Json | null
           password_hash?: string | null
+          preferred_country?: string | null
+          preferred_proxy_type?:
+            | Database["public"]["Enums"]["proxy_type"]
+            | null
           proxy_url?: string | null
           session_context?: Json | null
           sessions_run?: number | null
           storage_state?: Json | null
           updated_at?: string
           user_agent?: string | null
+        }
+        Relationships: []
+      }
+      proxies: {
+        Row: {
+          avg_response_ms: number | null
+          bandwidth_limit_mb: number | null
+          bandwidth_used_mb: number | null
+          city: string | null
+          country: string | null
+          created_at: string
+          expires_at: string | null
+          failure_count: number | null
+          host: string
+          id: string
+          last_check_at: string | null
+          last_success_at: string | null
+          metadata: Json | null
+          name: string
+          password: string | null
+          port: number
+          provider: Database["public"]["Enums"]["proxy_provider"]
+          proxy_type: Database["public"]["Enums"]["proxy_type"]
+          status: Database["public"]["Enums"]["proxy_status"]
+          success_count: number | null
+          updated_at: string
+          username: string | null
+        }
+        Insert: {
+          avg_response_ms?: number | null
+          bandwidth_limit_mb?: number | null
+          bandwidth_used_mb?: number | null
+          city?: string | null
+          country?: string | null
+          created_at?: string
+          expires_at?: string | null
+          failure_count?: number | null
+          host: string
+          id?: string
+          last_check_at?: string | null
+          last_success_at?: string | null
+          metadata?: Json | null
+          name: string
+          password?: string | null
+          port: number
+          provider?: Database["public"]["Enums"]["proxy_provider"]
+          proxy_type?: Database["public"]["Enums"]["proxy_type"]
+          status?: Database["public"]["Enums"]["proxy_status"]
+          success_count?: number | null
+          updated_at?: string
+          username?: string | null
+        }
+        Update: {
+          avg_response_ms?: number | null
+          bandwidth_limit_mb?: number | null
+          bandwidth_used_mb?: number | null
+          city?: string | null
+          country?: string | null
+          created_at?: string
+          expires_at?: string | null
+          failure_count?: number | null
+          host?: string
+          id?: string
+          last_check_at?: string | null
+          last_success_at?: string | null
+          metadata?: Json | null
+          name?: string
+          password?: string | null
+          port?: number
+          provider?: Database["public"]["Enums"]["proxy_provider"]
+          proxy_type?: Database["public"]["Enums"]["proxy_type"]
+          status?: Database["public"]["Enums"]["proxy_status"]
+          success_count?: number | null
+          updated_at?: string
+          username?: string | null
+        }
+        Relationships: []
+      }
+      proxy_providers: {
+        Row: {
+          api_endpoint: string | null
+          api_key_encrypted: string | null
+          auto_rotate: boolean | null
+          created_at: string
+          id: string
+          is_enabled: boolean | null
+          last_sync_at: string | null
+          max_concurrent: number | null
+          provider: Database["public"]["Enums"]["proxy_provider"]
+          rotation_interval_minutes: number | null
+          settings: Json | null
+          updated_at: string
+        }
+        Insert: {
+          api_endpoint?: string | null
+          api_key_encrypted?: string | null
+          auto_rotate?: boolean | null
+          created_at?: string
+          id?: string
+          is_enabled?: boolean | null
+          last_sync_at?: string | null
+          max_concurrent?: number | null
+          provider: Database["public"]["Enums"]["proxy_provider"]
+          rotation_interval_minutes?: number | null
+          settings?: Json | null
+          updated_at?: string
+        }
+        Update: {
+          api_endpoint?: string | null
+          api_key_encrypted?: string | null
+          auto_rotate?: boolean | null
+          created_at?: string
+          id?: string
+          is_enabled?: boolean | null
+          last_sync_at?: string | null
+          max_concurrent?: number | null
+          provider?: Database["public"]["Enums"]["proxy_provider"]
+          rotation_interval_minutes?: number | null
+          settings?: Json | null
+          updated_at?: string
         }
         Relationships: []
       }
@@ -501,6 +679,7 @@ export type Database = {
           profile_id: string | null
           profile_state: string | null
           progress: number | null
+          proxy_id: string | null
           resume_metadata: Json | null
           retry_count: number | null
           runner_id: string | null
@@ -532,6 +711,7 @@ export type Database = {
           profile_id?: string | null
           profile_state?: string | null
           progress?: number | null
+          proxy_id?: string | null
           resume_metadata?: Json | null
           retry_count?: number | null
           runner_id?: string | null
@@ -563,6 +743,7 @@ export type Database = {
           profile_id?: string | null
           profile_state?: string | null
           progress?: number | null
+          proxy_id?: string | null
           resume_metadata?: Json | null
           retry_count?: number | null
           runner_id?: string | null
@@ -590,6 +771,13 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "sessions_proxy_id_fkey"
+            columns: ["proxy_id"]
+            isOneToOne: false
+            referencedRelation: "proxies"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "sessions_scenario_id_fkey"
             columns: ["scenario_id"]
             isOneToOne: false
@@ -604,6 +792,39 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      system_diagnostics: {
+        Row: {
+          check_type: string
+          checked_at: string
+          component: string
+          details: Json | null
+          id: string
+          message: string | null
+          response_time_ms: number | null
+          status: string
+        }
+        Insert: {
+          check_type: string
+          checked_at?: string
+          component: string
+          details?: Json | null
+          id?: string
+          message?: string | null
+          response_time_ms?: number | null
+          status: string
+        }
+        Update: {
+          check_type?: string
+          checked_at?: string
+          component?: string
+          details?: Json | null
+          id?: string
+          message?: string | null
+          response_time_ms?: number | null
+          status?: string
+        }
+        Relationships: []
       }
       tasks: {
         Row: {
@@ -731,10 +952,45 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      auto_select_proxy: {
+        Args: {
+          p_preferred_country?: string
+          p_preferred_type?: Database["public"]["Enums"]["proxy_type"]
+          p_profile_id: string
+        }
+        Returns: string
+      }
       increment_profile_sessions: { Args: { p_id: string }; Returns: undefined }
+      run_system_diagnostic: {
+        Args: {
+          p_check_type: string
+          p_component: string
+          p_details?: Json
+          p_message?: string
+          p_response_time_ms?: number
+          p_status: string
+        }
+        Returns: string
+      }
     }
     Enums: {
       log_level: "debug" | "info" | "warning" | "error" | "success"
+      proxy_provider:
+        | "manual"
+        | "bright_data"
+        | "oxylabs"
+        | "smartproxy"
+        | "iproyal"
+        | "webshare"
+      proxy_status: "active" | "inactive" | "testing" | "failed" | "expired"
+      proxy_type:
+        | "http"
+        | "https"
+        | "socks4"
+        | "socks5"
+        | "residential"
+        | "datacenter"
+        | "mobile"
       session_status:
         | "idle"
         | "queued"
@@ -871,6 +1127,24 @@ export const Constants = {
   public: {
     Enums: {
       log_level: ["debug", "info", "warning", "error", "success"],
+      proxy_provider: [
+        "manual",
+        "bright_data",
+        "oxylabs",
+        "smartproxy",
+        "iproyal",
+        "webshare",
+      ],
+      proxy_status: ["active", "inactive", "testing", "failed", "expired"],
+      proxy_type: [
+        "http",
+        "https",
+        "socks4",
+        "socks5",
+        "residential",
+        "datacenter",
+        "mobile",
+      ],
       session_status: [
         "idle",
         "queued",
