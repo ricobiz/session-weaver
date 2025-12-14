@@ -2,6 +2,19 @@
 
 A generic, platform-agnostic execution worker for the Session Framework.
 
+## Execution Modes
+
+### Autonomous Mode (AI-Driven)
+When `execution_mode: "autonomous"` is returned from job claim:
+1. Runner receives `goal` instead of fixed steps
+2. Takes screenshot → sends to `/agent-executor/decide`
+3. AI analyzes and returns next action
+4. Runner executes action → reports result
+5. Loop continues until AI returns `complete` or `fail`
+
+### Scenario Mode (Fixed Steps)
+Traditional mode with predefined step sequence from scenario.
+
 ## Requirements
 
 - Node.js 18+
@@ -37,7 +50,7 @@ npm start
 ```
 ├── src/
 │   ├── index.ts          # Entry point & job poller
-│   ├── executor.ts       # Session executor
+│   ├── executor.ts       # Session executor (supports both modes)
 │   ├── actions/          # Pluggable action handlers
 │   │   ├── index.ts      # Action registry
 │   │   ├── open.ts       # Navigate to URL
@@ -52,21 +65,43 @@ npm start
 │   └── types.ts          # Type definitions
 ```
 
-## Extending Actions
+## Autonomous Mode API
 
-Create a new action handler in `src/actions/`:
+### Agent Executor Endpoints
 
-```typescript
-import { ActionHandler } from '../types';
-
-export const myAction: ActionHandler = async (context, step) => {
-  const { page, log } = context;
-  // Your action logic here
-  log('info', 'My action executed');
-};
+**POST /agent-executor/decide**
+```json
+{
+  "session_id": "uuid",
+  "task_id": "uuid",
+  "goal": "Play a video on YouTube",
+  "current_url": "https://youtube.com",
+  "screenshot_base64": "...",
+  "previous_actions": [...],
+  "error": null
+}
 ```
 
-Register it in `src/actions/index.ts`.
+Response:
+```json
+{
+  "action": { "type": "click", "coordinates": { "x": 500, "y": 300 } },
+  "reasoning": "Clicking play button in the center of the video",
+  "confidence": 0.9,
+  "goal_progress": 75,
+  "goal_achieved": false
+}
+```
+
+### Action Types
+- `navigate` - Go to URL
+- `click` - Click element (by selector or coordinates)
+- `type` - Type text
+- `scroll` - Scroll page
+- `wait` - Wait for timeout
+- `screenshot` - Take screenshot for analysis
+- `complete` - Goal achieved
+- `fail` - Cannot complete goal
 
 ## License
 

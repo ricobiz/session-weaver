@@ -2,7 +2,6 @@ import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
 import { 
   CheckCircle2, 
@@ -13,10 +12,10 @@ import {
   Target,
   Users,
   Clock,
-  ChevronRight,
   AlertTriangle,
   Sparkles,
-  RotateCcw
+  RotateCcw,
+  Brain
 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from '@/hooks/use-toast';
@@ -38,17 +37,12 @@ interface TaskPlan {
     };
     human_summary: string;
   };
-  scenario: {
-    id: string;
-    name: string;
-    steps: Array<{ action: string; target?: string; duration?: number; text?: string }>;
-    estimated_duration: number;
-  };
   validation: {
     is_valid: boolean;
     warnings: string[];
     risks: string[];
   };
+  execution_mode: 'autonomous';
 }
 
 interface TaskPlannerProps {
@@ -89,7 +83,7 @@ export function TaskPlanner({ userCommand, onApprove, onCancel, onEdit }: TaskPl
         throw new Error('No profiles available. Please create profiles first.');
       }
 
-      // Create task via API
+      // Create task via API (no fixed scenario - AI will handle it)
       const response = await fetch(
         `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/session-api/tasks`,
         {
@@ -109,6 +103,7 @@ export function TaskPlanner({ userCommand, onApprove, onCancel, onEdit }: TaskPl
               min_duration: intent.behavior.min_duration,
               max_duration: intent.behavior.max_duration,
               randomize_timing: intent.behavior.randomize,
+              execution_mode: 'autonomous', // AI-driven execution
             },
           }),
         }
@@ -120,32 +115,15 @@ export function TaskPlanner({ userCommand, onApprove, onCancel, onEdit }: TaskPl
 
       const task = await response.json();
 
-      // Generate scenario
-      const scenarioResponse = await fetch(
-        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/session-api/tasks/${task.id}/generate-scenario`,
-        { method: 'POST', headers: { 'Content-Type': 'application/json' } }
-      );
-
-      if (!scenarioResponse.ok) {
-        throw new Error('Failed to generate execution plan');
-      }
-
-      const scenario = await scenarioResponse.json();
-
       // Validate the plan
-      const validation = validatePlan(intent, scenario);
+      const validation = validatePlan(intent);
 
       setPlan({
         id: task.id,
         name: task.name,
         parsed_intent: intent,
-        scenario: {
-          id: scenario.id,
-          name: scenario.name,
-          steps: scenario.steps || [],
-          estimated_duration: scenario.estimated_duration_seconds || 60,
-        },
         validation,
+        execution_mode: 'autonomous',
       });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to analyze command');
@@ -158,18 +136,21 @@ export function TaskPlanner({ userCommand, onApprove, onCancel, onEdit }: TaskPl
     const lower = input.toLowerCase();
     
     // Detect platform
-    let platform = 'unknown';
+    let platform = 'generic';
     if (lower.includes('spotify')) platform = 'spotify';
     else if (lower.includes('youtube')) platform = 'youtube';
     else if (lower.includes('soundcloud')) platform = 'soundcloud';
     else if (lower.includes('tiktok')) platform = 'tiktok';
+    else if (lower.includes('instagram')) platform = 'instagram';
+    else if (lower.includes('twitter') || lower.includes('x.com')) platform = 'twitter';
 
     // Detect goal
     let goal = 'play';
     if (lower.includes('like')) goal = 'like';
     else if (lower.includes('comment')) goal = 'comment';
     else if (lower.includes('follow') || lower.includes('subscribe')) goal = 'follow';
-    else if (lower.includes('play') || lower.includes('listen') || lower.includes('watch')) goal = 'play';
+    else if (lower.includes('play') || lower.includes('listen') || lower.includes('watch') || lower.includes('view')) goal = 'play';
+    else if (lower.includes('share')) goal = 'share';
 
     // Detect entry method and target
     let entry_method: 'url' | 'search' = 'search';
@@ -240,12 +221,12 @@ export function TaskPlanner({ userCommand, onApprove, onCancel, onEdit }: TaskPl
     };
   };
 
-  const validatePlan = (intent: any, scenario: any): { is_valid: boolean; warnings: string[]; risks: string[] } => {
+  const validatePlan = (intent: any): { is_valid: boolean; warnings: string[]; risks: string[] } => {
     const warnings: string[] = [];
     const risks: string[] = [];
 
-    if (intent.platform === 'unknown') {
-      warnings.push('Platform not clearly identified');
+    if (intent.platform === 'generic') {
+      warnings.push('Platform not clearly identified - AI will determine best approach');
     }
 
     if (intent.entry_method === 'search' && intent.target.length < 3) {
@@ -260,24 +241,11 @@ export function TaskPlanner({ userCommand, onApprove, onCancel, onEdit }: TaskPl
       warnings.push('Using all profiles - ensure they are properly configured');
     }
 
-    const steps = scenario.steps || [];
-    if (steps.length < 2) {
-      risks.push('Very few steps - task may be incomplete');
-    }
-
     return {
       is_valid: risks.length === 0,
       warnings,
       risks,
     };
-  };
-
-  const formatStep = (step: { action: string; target?: string; duration?: number; text?: string }, index: number) => {
-    let desc = step.action.charAt(0).toUpperCase() + step.action.slice(1);
-    if (step.target) desc += `: ${step.target.slice(0, 50)}${step.target.length > 50 ? '...' : ''}`;
-    if (step.text) desc += `: "${step.text}"`;
-    if (step.duration) desc += ` (${step.duration}s)`;
-    return desc;
   };
 
   if (isAnalyzing) {
@@ -290,7 +258,7 @@ export function TaskPlanner({ userCommand, onApprove, onCancel, onEdit }: TaskPl
               <Loader2 className="h-4 w-4 text-primary/60 animate-spin absolute -right-1 -bottom-1" />
             </div>
             <p className="text-sm text-muted-foreground">Analyzing your request...</p>
-            <p className="text-xs text-muted-foreground/70">Building execution plan</p>
+            <p className="text-xs text-muted-foreground/70">Building autonomous execution plan</p>
           </div>
         </CardContent>
       </Card>
@@ -329,7 +297,7 @@ export function TaskPlanner({ userCommand, onApprove, onCancel, onEdit }: TaskPl
       <CardHeader className="pb-3">
         <CardTitle className="text-base flex items-center gap-2">
           <CheckCircle2 className="h-5 w-5 text-green-500" />
-          <span>I understood your request</span>
+          <span>Ready for autonomous execution</span>
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -348,15 +316,29 @@ export function TaskPlanner({ userCommand, onApprove, onCancel, onEdit }: TaskPl
             <Users className="h-3 w-3" />
             {plan.parsed_intent.profile_count === -1 ? 'All' : plan.parsed_intent.profile_count} profiles
           </Badge>
-          <Badge variant="outline" className="gap-1">
-            <Clock className="h-3 w-3" />
-            ~{plan.scenario.estimated_duration}s
+          <Badge variant="default" className="gap-1 bg-primary/20 text-primary">
+            <Brain className="h-3 w-3" />
+            AI Autonomous
           </Badge>
           {plan.parsed_intent.run_count > 1 && (
-            <Badge variant="default" className="gap-1">
+            <Badge variant="secondary" className="gap-1">
               {plan.parsed_intent.run_count}× each
             </Badge>
           )}
+        </div>
+
+        {/* Autonomous Mode Info */}
+        <div className="bg-primary/5 border border-primary/20 rounded-lg p-3">
+          <div className="flex items-start gap-2">
+            <Brain className="h-4 w-4 text-primary mt-0.5" />
+            <div>
+              <p className="text-sm font-medium">Autonomous AI Execution</p>
+              <p className="text-xs text-muted-foreground mt-1">
+                AI agent will analyze page screenshots, decide actions dynamically, 
+                adapt to changes, and verify goal completion in real-time.
+              </p>
+            </div>
+          </div>
         </div>
 
         {/* Warnings & Risks */}
@@ -379,26 +361,6 @@ export function TaskPlanner({ userCommand, onApprove, onCancel, onEdit }: TaskPl
 
         <Separator />
 
-        {/* Execution Steps */}
-        <div>
-          <p className="text-xs font-medium text-muted-foreground mb-2">EXECUTION PLAN ({plan.scenario.steps.length} steps)</p>
-          <ScrollArea className="h-[120px]">
-            <div className="space-y-1.5 pr-3">
-              {plan.scenario.steps.map((step, i) => (
-                <div key={i} className="flex items-center gap-2 text-sm">
-                  <span className="w-5 h-5 rounded-full bg-muted flex items-center justify-center text-xs shrink-0">
-                    {i + 1}
-                  </span>
-                  <ChevronRight className="h-3 w-3 text-muted-foreground shrink-0" />
-                  <span className="text-muted-foreground truncate">{formatStep(step, i)}</span>
-                </div>
-              ))}
-            </div>
-          </ScrollArea>
-        </div>
-
-        <Separator />
-
         {/* Actions */}
         <div className="flex gap-2">
           <Button variant="outline" size="sm" onClick={onCancel} className="flex-1">
@@ -412,7 +374,7 @@ export function TaskPlanner({ userCommand, onApprove, onCancel, onEdit }: TaskPl
           )}
           <Button size="sm" onClick={() => onApprove(plan.id, plan)} className="flex-1 gap-1">
             <Play className="h-3 w-3" />
-            Run
+            Start AI Agent
           </Button>
         </div>
       </CardContent>
