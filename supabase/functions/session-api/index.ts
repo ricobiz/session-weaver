@@ -842,6 +842,69 @@ serve(async (req) => {
       return response.json();
     }
 
+    // GET /ai/balance - Get OpenRouter account balance
+    if (req.method === 'GET' && path === '/ai/balance') {
+      try {
+        if (!OPENROUTER_API_KEY) {
+          return new Response(JSON.stringify({ 
+            credits: 0, 
+            credits_used: 0, 
+            error: 'API key not configured' 
+          }), {
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
+
+        // Fetch credits info from OpenRouter
+        const response = await fetch('https://openrouter.ai/api/v1/auth/key', {
+          headers: {
+            'Authorization': `Bearer ${OPENROUTER_API_KEY}`,
+          },
+        });
+
+        if (!response.ok) {
+          return new Response(JSON.stringify({ 
+            credits: 0, 
+            credits_used: 0, 
+            error: 'Failed to fetch balance' 
+          }), {
+            status: 500,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
+
+        const data = await response.json();
+        
+        // OpenRouter returns data.data with label, usage, limit, etc.
+        const keyData = data.data || {};
+        
+        return new Response(JSON.stringify({
+          credits: keyData.limit ?? 100, // Default if unlimited
+          credits_used: keyData.usage ?? 0,
+          limit: keyData.limit,
+          is_free_tier: keyData.is_free_tier ?? false,
+          rate_limit: keyData.rate_limit,
+          usage: {
+            prompt_tokens: 0,
+            completion_tokens: 0,
+            total_cost: keyData.usage ?? 0,
+          }
+        }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      } catch (error) {
+        console.error('[session-api] Balance fetch error:', error);
+        return new Response(JSON.stringify({ 
+          credits: 0, 
+          credits_used: 0, 
+          error: 'Failed to fetch balance' 
+        }), {
+          status: 500,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+    }
+
     // GET /ai/models - List available models from OpenRouter
     if (path === '/ai/models' && (req.method === 'GET' || req.method === 'POST')) {
       try {
@@ -1232,13 +1295,155 @@ Analyze this failure and provide debugging insights.`;
         .eq('id', taskId);
 
       // Resume paused sessions - put them back in queue
-      await supabase
+      const { data: pausedSessions } = await supabase
         .from('sessions')
-        .update({ status: 'queued' })
+        .select('id')
         .eq('task_id', taskId)
         .eq('status', 'paused');
 
+      if (pausedSessions?.length) {
+        await supabase
+          .from('sessions')
+          .update({ status: 'queued' })
+          .eq('task_id', taskId)
+          .eq('status', 'paused');
+
+        // Re-add to execution queue
+        const queueEntries = pausedSessions.map((s) => ({
+          session_id: s.id,
+          priority: 0,
+        }));
+        await supabase.from('execution_queue').insert(queueEntries);
+      }
+
       return new Response(JSON.stringify({ success: true }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    // POST /sessions/:id/resume - Resume a failed/paused session from last checkpoint
+    if (req.method === 'POST' && path.match(/^\/sessions\/[^/]+\/resume$/)) {
+      const sessionId = path.split('/')[2];
+      
+      const { data: session, error: sessionError } = await supabase
+        .from('sessions')
+        .select('*')
+        .eq('id', sessionId)
+        .single();
+
+      if (sessionError || !session) {
+        return new Response(JSON.stringify({ error: 'Session not found' }), {
+          status: 404,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      if (!session.is_resumable) {
+        return new Response(JSON.stringify({ error: 'Session is not resumable' }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      // Reset session for retry
+      await supabase
+        .from('sessions')
+        .update({ 
+          status: 'queued',
+          error_message: null,
+          retry_count: (session.retry_count || 0) + 1,
+        })
+        .eq('id', sessionId);
+
+      // Add back to execution queue
+      await supabase.from('execution_queue').insert({
+        session_id: sessionId,
+        priority: 1, // Higher priority for retries
+      });
+
+      return new Response(JSON.stringify({ success: true, resumed_from_step: session.last_successful_step }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    // POST /runners/check-disconnected - Check for disconnected runners and pause their sessions
+    if (req.method === 'POST' && path === '/runners/check-disconnected') {
+      const DISCONNECT_THRESHOLD_MS = 120000; // 2 minutes
+      const now = new Date();
+      const threshold = new Date(now.getTime() - DISCONNECT_THRESHOLD_MS).toISOString();
+
+      // Find stale runners
+      const { data: staleRunners } = await supabase
+        .from('runner_health')
+        .select('runner_id')
+        .lt('last_heartbeat', threshold);
+
+      if (staleRunners?.length) {
+        const staleRunnerIds = staleRunners.map(r => r.runner_id);
+        
+        // Mark their running sessions as paused (recoverable)
+        const { data: affectedSessions } = await supabase
+          .from('sessions')
+          .update({ 
+            status: 'paused',
+            error_message: 'Runner disconnected - session paused for recovery',
+            is_resumable: true,
+          })
+          .in('runner_id', staleRunnerIds)
+          .eq('status', 'running')
+          .select('id');
+
+        console.log(`[session-api] Paused ${affectedSessions?.length || 0} sessions from disconnected runners`);
+
+        return new Response(JSON.stringify({ 
+          stale_runners: staleRunnerIds,
+          sessions_paused: affectedSessions?.length || 0,
+        }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      return new Response(JSON.stringify({ stale_runners: [], sessions_paused: 0 }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    // POST /sessions/auto-retry - Automatically retry failed resumable sessions
+    if (req.method === 'POST' && path === '/sessions/auto-retry') {
+      const { max_retries = 3 } = await req.json();
+
+      // Find failed but resumable sessions that haven't exceeded retry limit
+      const { data: retryableSessions } = await supabase
+        .from('sessions')
+        .select('id, retry_count, task_id')
+        .eq('status', 'error')
+        .eq('is_resumable', true)
+        .lt('retry_count', max_retries);
+
+      if (!retryableSessions?.length) {
+        return new Response(JSON.stringify({ retried: 0 }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      // Queue them for retry
+      for (const session of retryableSessions) {
+        await supabase
+          .from('sessions')
+          .update({ 
+            status: 'queued',
+            error_message: null,
+            retry_count: (session.retry_count || 0) + 1,
+          })
+          .eq('id', session.id);
+
+        await supabase.from('execution_queue').insert({
+          session_id: session.id,
+          priority: 1,
+        });
+      }
+
+      return new Response(JSON.stringify({ retried: retryableSessions.length }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }

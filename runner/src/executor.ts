@@ -57,126 +57,197 @@ export class SessionExecutor {
     let context: BrowserContext | null = null;
     let page: Page | null = null;
     let success = false;
+    let sessionRetryCount = 0;
 
-    try {
-      // Launch browser
-      browser = await this.launchBrowser(session);
-      
-      // Create context with profile settings
-      context = await this.createContext(browser, session);
-      
-      // Create page
-      page = await context.newPage();
+    // Session-level retry loop for self-healing
+    while (sessionRetryCount <= this.config.sessionRetryLimit) {
+      try {
+        // Launch browser
+        browser = await this.launchBrowser(session);
+        
+        // Create context with profile settings
+        context = await this.createContext(browser, session);
+        
+        // Create page
+        page = await context.newPage();
 
-      // Log session start
-      await this.api.sendLog(
-        session.id,
-        'info',
-        resumeFromStep > 0 ? `Session resumed from step ${resumeFromStep + 1}` : 'Session initialized',
-        0,
-        'init'
-      );
-
-      // Execute scenario steps
-      const steps = session.scenarios.steps;
-      const totalSteps = steps.length;
-      const stepStates: Record<number, StepState> = session.resume_metadata?.stepStates || {};
-
-      for (let i = resumeFromStep; i < steps.length; i++) {
-        const step = steps[i];
-        const progress = Math.round(((i + 1) / totalSteps) * 100);
-
-        const stepResult = await this.executeStepWithRetry(
-          session, 
-          page, 
-          context, 
-          step, 
-          i, 
-          sessionLog
+        // Log session start
+        await this.api.sendLog(
+          session.id,
+          'info',
+          resumeFromStep > 0 
+            ? `Session resumed from step ${resumeFromStep + 1}${sessionRetryCount > 0 ? ` (retry ${sessionRetryCount})` : ''}` 
+            : `Session initialized${sessionRetryCount > 0 ? ` (retry ${sessionRetryCount})` : ''}`,
+          0,
+          'init'
         );
 
-        // Update step state
-        stepStates[i] = {
-          completed: stepResult.success,
-          attempts: stepResult.attempts,
-          lastError: stepResult.error,
-          durationMs: stepResult.durationMs,
-        };
+        // Execute scenario steps
+        const steps = session.scenarios.steps;
+        const totalSteps = steps.length;
+        const stepStates: Record<number, StepState> = session.resume_metadata?.stepStates || {};
+        const startFromStep = sessionRetryCount > 0 ? (session.last_successful_step ?? 0) : resumeFromStep;
 
-        if (!stepResult.success) {
-          // Determine if session can be resumed
-          const isResumable = this.isStepResumable(step, stepResult.error);
-          
+        let allStepsCompleted = true;
+
+        for (let i = startFromStep; i < steps.length; i++) {
+          const step = steps[i];
+          const progress = Math.round(((i + 1) / totalSteps) * 100);
+
+          const stepResult = await this.executeStepWithRetry(
+            session, 
+            page, 
+            context, 
+            step, 
+            i, 
+            sessionLog
+          );
+
+          // Update step state
+          stepStates[i] = {
+            completed: stepResult.success,
+            attempts: stepResult.attempts,
+            lastError: stepResult.error,
+            durationMs: stepResult.durationMs,
+          };
+
+          if (!stepResult.success) {
+            // Determine if session can be resumed
+            const isResumable = this.isStepResumable(step, stepResult.error);
+            const errorCategory = categorizeError(stepResult.error || 'Unknown error');
+            
+            // Check if we should retry at session level
+            const canRetrySession = isResumable && 
+                                    errorCategory !== ErrorCategory.FATAL && 
+                                    sessionRetryCount < this.config.sessionRetryLimit;
+
+            await this.api.updateSession(session.id, {
+              status: canRetrySession ? 'running' : 'error',
+              error_message: stepResult.error,
+              current_step: i,
+              last_successful_step: i > 0 ? i - 1 : null,
+              is_resumable: isResumable,
+              retry_count: sessionRetryCount,
+              resume_metadata: {
+                lastSuccessfulStep: i > 0 ? i - 1 : 0,
+                lastAttemptAt: new Date().toISOString(),
+                stepStates,
+                errorCategory: errorCategory,
+              },
+            });
+
+            if (canRetrySession) {
+              sessionLog('warning', `Step ${i + 1} failed with recoverable error. Will retry session (${sessionRetryCount + 1}/${this.config.sessionRetryLimit})`);
+              allStepsCompleted = false;
+              
+              // Calculate backoff delay
+              const retryDelay = calculateRetryDelay(sessionRetryCount);
+              sessionLog('info', `Waiting ${retryDelay}ms before session retry...`);
+              await new Promise(resolve => setTimeout(resolve, retryDelay));
+              
+              break; // Exit step loop to retry session
+            } else {
+              throw new Error(stepResult.error);
+            }
+          }
+
+          // Update progress and resume point
           await this.api.updateSession(session.id, {
-            status: 'error',
-            error_message: stepResult.error,
-            current_step: i,
-            last_successful_step: i > 0 ? i - 1 : null,
-            is_resumable: isResumable,
+            progress,
+            current_step: i + 1,
+            last_successful_step: i,
             resume_metadata: {
-              lastSuccessfulStep: i > 0 ? i - 1 : 0,
+              lastSuccessfulStep: i,
               lastAttemptAt: new Date().toISOString(),
               stepStates,
             },
           });
-
-          throw new Error(stepResult.error);
         }
 
-        // Update progress and resume point
-        await this.api.updateSession(session.id, {
-          progress,
-          current_step: i + 1,
-          last_successful_step: i,
-          resume_metadata: {
-            lastSuccessfulStep: i,
-            lastAttemptAt: new Date().toISOString(),
-            stepStates,
-          },
-        });
+        if (allStepsCompleted) {
+          // Save storage state back to profile
+          await this.saveStorageState(context, session.profiles.id);
+
+          // Mark session as complete
+          await this.api.updateSession(session.id, {
+            status: 'success',
+            progress: 100,
+            current_step: totalSteps,
+            last_successful_step: totalSteps - 1,
+            is_resumable: false,
+            retry_count: sessionRetryCount,
+          });
+
+          await this.api.sendLog(
+            session.id,
+            'success',
+            `Session completed successfully${sessionRetryCount > 0 ? ` after ${sessionRetryCount} retries` : ''}`,
+            totalSteps,
+            'complete'
+          );
+
+          sessionLog('success', `Session completed successfully${sessionRetryCount > 0 ? ` after ${sessionRetryCount} retries` : ''}`);
+          success = true;
+          break; // Exit retry loop - success
+        }
+
+        // Clean up before retry
+        if (page) await page.close().catch(() => {});
+        if (context) await context.close().catch(() => {});
+        if (browser) await browser.close().catch(() => {});
+        page = null;
+        context = null;
+        browser = null;
+
+        sessionRetryCount++;
+
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        const errorCategory = categorizeError(errorMessage);
+        
+        sessionLog('error', `Session failed: ${errorMessage}`);
+
+        // Check if we should retry at session level
+        if (errorCategory !== ErrorCategory.FATAL && sessionRetryCount < this.config.sessionRetryLimit) {
+          sessionLog('warning', `Recoverable error. Will retry session (${sessionRetryCount + 1}/${this.config.sessionRetryLimit})`);
+          
+          // Clean up before retry
+          if (page) await page.close().catch(() => {});
+          if (context) await context.close().catch(() => {});
+          if (browser) await browser.close().catch(() => {});
+          page = null;
+          context = null;
+          browser = null;
+
+          const retryDelay = calculateRetryDelay(sessionRetryCount);
+          await new Promise(resolve => setTimeout(resolve, retryDelay));
+          
+          sessionRetryCount++;
+          continue;
+        }
+
+        await this.api.sendLog(
+          session.id,
+          'error',
+          `Session failed: ${errorMessage}${sessionRetryCount > 0 ? ` (after ${sessionRetryCount} retries)` : ''}`,
+          undefined,
+          'error',
+          { 
+            stack: error instanceof Error ? error.stack : undefined,
+            errorCategory,
+            totalRetries: sessionRetryCount,
+          }
+        );
+
+        break; // Exit retry loop - fatal error
+      } finally {
+        // Final cleanup (only if not retrying)
+        if (success || sessionRetryCount >= this.config.sessionRetryLimit) {
+          if (page) await page.close().catch(() => {});
+          if (context) await context.close().catch(() => {});
+          if (browser) await browser.close().catch(() => {});
+        }
       }
-
-      // Save storage state back to profile
-      await this.saveStorageState(context, session.profiles.id);
-
-      // Mark session as complete
-      await this.api.updateSession(session.id, {
-        status: 'success',
-        progress: 100,
-        current_step: totalSteps,
-        last_successful_step: totalSteps - 1,
-        is_resumable: false,
-      });
-
-      await this.api.sendLog(
-        session.id,
-        'success',
-        'Session completed successfully',
-        totalSteps,
-        'complete'
-      );
-
-      sessionLog('success', 'Session completed successfully');
-      success = true;
-
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      sessionLog('error', `Session failed: ${errorMessage}`);
-
-      await this.api.sendLog(
-        session.id,
-        'error',
-        `Session failed: ${errorMessage}`,
-        undefined,
-        'error',
-        { stack: error instanceof Error ? error.stack : undefined }
-      );
-
-    } finally {
-      // Cleanup
-      if (page) await page.close().catch(() => {});
-      if (context) await context.close().catch(() => {});
-      if (browser) await browser.close().catch(() => {});
     }
 
     return { success };
