@@ -144,18 +144,26 @@ export class AutonomousExecutor {
           break;
         }
 
-        sessionLog('info', `AI Action ${actionsExecuted + 1}: ${agentResponse.action.type} (confidence: ${(agentResponse.confidence * 100).toFixed(0)}%)`);
+        // Check if this is a batch response
+        const isBatch = Array.isArray(agentResponse.actions) && agentResponse.actions.length > 0;
+        const actions = isBatch ? agentResponse.actions : [agentResponse.action];
+
+        if (isBatch) {
+          sessionLog('info', `AI Batch: ${actions.length} actions (confidence: ${(agentResponse.confidence * 100).toFixed(0)}%)`);
+        } else {
+          sessionLog('info', `AI Action ${actionsExecuted + 1}: ${agentResponse.action?.type} (confidence: ${(agentResponse.confidence * 100).toFixed(0)}%)`);
+        }
         sessionLog('debug', `Reasoning: ${agentResponse.reasoning}`);
 
-        // Check for terminal actions
-        if (agentResponse.action.type === 'complete') {
+        // Save generated data if present
+        if (agentResponse.generated_data) {
+          generatedData = agentResponse.generated_data;
+          sessionLog('info', `Generated credentials: ${JSON.stringify(generatedData)}`);
+        }
+
+        // Check for terminal actions (single action mode)
+        if (!isBatch && agentResponse.action?.type === 'complete') {
           sessionLog('success', `Goal achieved: ${agentResponse.action.reason}`);
-          
-          // Сохраняем сгенерированные данные (логин/пароль и т.д.)
-          if ((agentResponse as any).generated_data) {
-            generatedData = (agentResponse as any).generated_data;
-            sessionLog('info', `Generated data: ${JSON.stringify(generatedData)}`);
-          }
           
           const avgVerificationScore = verifiedActions > 0 
             ? totalVerificationScore / verifiedActions 
@@ -169,7 +177,7 @@ export class AutonomousExecutor {
           };
         }
 
-        if (agentResponse.action.type === 'fail') {
+        if (!isBatch && agentResponse.action?.type === 'fail') {
           sessionLog('error', `Goal failed: ${agentResponse.action.reason}`);
           return { 
             success: false, 
@@ -178,41 +186,70 @@ export class AutonomousExecutor {
           };
         }
 
-        // Execute the action
-        const actionResult = await this.executeAction(page, agentResponse.action, sessionLog);
-        actionsExecuted++;
+        // Execute all actions (batch or single)
+        let batchSuccess = true;
+        let lastError: string | undefined;
+        
+        for (let i = 0; i < actions.length; i++) {
+          const action = actions[i];
+          if (!action || !action.type) continue;
+          
+          if (isBatch) {
+            sessionLog('debug', `  [${i + 1}/${actions.length}] ${action.type}${action.text ? `: "${action.text.slice(0, 20)}..."` : ''}`);
+          }
+          
+          const actionResult = await this.executeAction(page, action, sessionLog);
+          actionsExecuted++;
+          
+          // Record in history
+          actionHistory.push({
+            action: action.type,
+            coordinates: action.coordinates,
+            text: action.text,
+            url: action.url,
+            result: actionResult.success ? 'success' : `failed: ${actionResult.error}`,
+            urlBefore,
+            urlAfter: page.url()
+          });
+          
+          if (!actionResult.success) {
+            batchSuccess = false;
+            lastError = actionResult.error;
+            sessionLog('warning', `Action ${action.type} failed: ${actionResult.error}`);
+            break; // Stop batch on first failure
+          }
+          
+          // Small delay between batch actions (but no screenshot!)
+          if (i < actions.length - 1) {
+            await page.waitForTimeout(200);
+          }
+        }
 
-        // Wait for page to stabilize
+        // Wait for page to stabilize AFTER all batch actions
         await page.waitForTimeout(TIMEOUTS.PAGE_STABILIZE);
 
-        // Capture state after action
+        // Capture state after ALL actions
         const afterState = await this.captureState(page);
         const screenshotAfter = await this.captureScreenshot(page);
         const urlAfter = page.url();
-        
-        // Записываем в историю для AI
-        actionHistory.push({
-          action: agentResponse.action.type,
-          coordinates: agentResponse.action.coordinates,
-          text: agentResponse.action.text,
-          url: agentResponse.action.url,
-          result: actionResult.success ? 'success' : `failed: ${actionResult.error}`,
-          urlBefore,
-          urlAfter
-        });
 
-        // Verify action if required
+        // Verify batch if required
         if (agentResponse.requires_verification && this.config.verificationEnabled) {
           const domChanges = this.computeDomChanges(beforeState, afterState);
+          const actionType = isBatch ? `batch[${actions.length}]` : (agentResponse.action?.type || 'unknown');
           
           const verificationResult = await this.verifyAction(
             session.id,
             actionsExecuted - 1,
-            agentResponse.action.type,
-            agentResponse.verification_criteria || agentResponse.action.expected_changes || [],
+            actionType,
+            agentResponse.verification_criteria || [],
             beforeState,
             afterState,
             domChanges,
+            beforeState.url !== afterState.url,
+            networkRequests.slice(-10),
+            agentEndpoint
+          );
             beforeState.url !== afterState.url,
             networkRequests.slice(-10),
             agentEndpoint
@@ -223,11 +260,11 @@ export class AutonomousExecutor {
             verifiedActions++;
 
             if (!verificationResult.verified) {
-              sessionLog('warning', `Action verification FAILED (${(verificationResult.confidence * 100).toFixed(0)}% confidence)`);
+              sessionLog('warning', `Verification FAILED (${(verificationResult.confidence * 100).toFixed(0)}% confidence)`);
               // Report failed verification to agent
               await this.reportToAgent(
                 session.id,
-                `Action ${agentResponse.action.type} verification failed`,
+                `${actionType} verification failed`,
                 screenshotAfter,
                 page.url(),
                 'Verification failed - action may not have had expected effect',
@@ -235,7 +272,7 @@ export class AutonomousExecutor {
                 agentEndpoint
               );
             } else {
-              sessionLog('success', `Action verified (${(verificationResult.confidence * 100).toFixed(0)}% confidence)`);
+              sessionLog('success', `Verified (${(verificationResult.confidence * 100).toFixed(0)}% confidence)`);
             }
           }
         }
@@ -245,15 +282,15 @@ export class AutonomousExecutor {
 
         // Network requests are now managed as circular buffer - no cleanup needed
 
-        // Report result and get feedback
-        if (actionsExecuted % 5 === 0 || !actionResult.success) {
+        // Report result and get feedback (every 5 actions or on batch failure)
+        if (actionsExecuted % 5 === 0 || !batchSuccess) {
           const screenshot = await this.captureScreenshot(page);
           await this.reportToAgent(
             session.id,
-            actionResult.success ? 'completed' : 'failed',
+            batchSuccess ? 'completed' : 'failed',
             screenshot,
             page.url(),
-            actionResult.error,
+            lastError,
             undefined,
             agentEndpoint
           );

@@ -82,7 +82,13 @@ CRITICAL RULES:
 3. ALWAYS remember what credentials you generated - you MUST return them at the end
 4. Analyze screenshots to find interactive elements and their PIXEL COORDINATES
 5. Click actions MUST include coordinates {x, y} - calculate from screenshot analysis
-6. Self-verify each action worked before proceeding
+
+BATCH ACTIONS (IMPORTANT FOR EFFICIENCY):
+- You can return MULTIPLE actions at once in an "actions" array
+- Use batch when you're confident about a sequence (e.g., filling a form)
+- Example: click field1 → type text1 → click field2 → type text2 → click submit
+- All actions execute in order, screenshot only taken at the END
+- If uncertain or need to verify something, use single action instead
 
 LEARNING FROM HISTORY:
 - You receive PREVIOUS_ACTIONS showing what you already did
@@ -103,17 +109,17 @@ AVAILABLE ACTIONS:
 - complete: { type: "complete", reason: "...", generated_data: { username, password, email, ... } }
 - fail: { type: "fail", reason: "..." }
 
-WORKFLOW FOR REGISTRATION:
-1. Analyze page - find registration/signup button or link
-2. Click it using coordinates from screenshot
-3. Wait for form to load
-4. Find each input field (username, email, password, etc.)
-5. Click on field → type value → move to next
-6. Find and click submit button
-7. Verify success (URL change, welcome message, etc.)
-8. Return generated credentials in "complete" action
+WORKFLOW FOR REGISTRATION (use BATCH for form filling!):
+1. Analyze page - find registration/signup form
+2. If popup/cookie banner visible - single action to close it
+3. When form is visible - use BATCH to fill ALL fields at once:
+   [click email, type email, click password, type password, click name, type name, click submit]
+4. After batch - verify success (URL change, welcome message, etc.)
+5. Return generated credentials in "complete" action
 
 OUTPUT FORMAT (only valid JSON):
+
+For SINGLE action:
 {
   "action": { "type": "...", "coordinates": { "x": 0, "y": 0 }, "text": "...", ... },
   "reasoning": "what I'm doing and why",
@@ -121,13 +127,30 @@ OUTPUT FORMAT (only valid JSON):
   "goal_progress": 0-100,
   "goal_achieved": false,
   "generated_data": { "username": "...", "password": "...", "email": "..." },
-  "requires_verification": true,
-  "verification_criteria": [{ "type": "url_contains|element_visible|text_appears", "value": "..." }]
+  "requires_verification": true
+}
+
+For BATCH actions (preferred for forms!):
+{
+  "actions": [
+    { "type": "click", "coordinates": { "x": 300, "y": 200 } },
+    { "type": "type", "text": "user_x7k2m9@tempmail.test" },
+    { "type": "click", "coordinates": { "x": 300, "y": 280 } },
+    { "type": "type", "text": "Pass_a3b8k2!" },
+    { "type": "click", "coordinates": { "x": 300, "y": 400 } }
+  ],
+  "reasoning": "Filling registration form with generated credentials",
+  "confidence": 0.9,
+  "goal_progress": 70,
+  "goal_achieved": false,
+  "generated_data": { "username": "user_x7k2m9", "password": "Pass_a3b8k2!", "email": "user_x7k2m9@tempmail.test" }
 }
 
 IMPORTANT: 
+- Use BATCH for form filling - saves API calls and is faster!
+- Use SINGLE action when uncertain or after batch to verify result
 - When goal is achieved, use action type "complete" and include ALL generated_data!
-- If stuck after 5+ similar actions with no progress, use "fail" action with reason explaining the problem`;
+- If stuck after 5+ similar actions with no progress, use "fail" action with reason`;
 
 const VISION_ANALYSIS_PROMPT = `You are analyzing a screenshot to help with web automation.
 
@@ -444,27 +467,44 @@ serve(async (req) => {
         };
       }
 
+      // Normalize response - support both single action and batch actions
+      const isBatch = Array.isArray(agentResponse.actions) && agentResponse.actions.length > 0;
+      const actionType = isBatch 
+        ? `batch[${agentResponse.actions.length}]` 
+        : agentResponse.action?.type || 'unknown';
+
       // Log
       await supabase.from('session_logs').insert({
         session_id: state.session_id,
         level: 'info',
-        message: `AI: ${agentResponse.action.type}`,
-        action: agentResponse.action.type,
-        details: { reasoning: agentResponse.reasoning, confidence: agentResponse.confidence },
+        message: isBatch 
+          ? `AI: batch of ${agentResponse.actions.length} actions` 
+          : `AI: ${actionType}`,
+        action: actionType,
+        details: { 
+          reasoning: agentResponse.reasoning, 
+          confidence: agentResponse.confidence,
+          is_batch: isBatch,
+          batch_size: isBatch ? agentResponse.actions.length : 1
+        },
       });
 
       await supabase.from('sessions').update({
         progress: agentResponse.goal_progress,
-        metadata: { current_action: agentResponse.action.type, reasoning: agentResponse.reasoning },
+        metadata: { 
+          current_action: actionType, 
+          reasoning: agentResponse.reasoning,
+          is_batch: isBatch 
+        },
       }).eq('id', state.session_id);
 
-      if (agentResponse.goal_achieved || agentResponse.action.type === 'complete') {
+      if (agentResponse.goal_achieved || agentResponse.action?.type === 'complete') {
         await supabase.from('sessions').update({
           status: 'success', progress: 100, completed_at: new Date().toISOString(),
         }).eq('id', state.session_id);
       }
 
-      if (agentResponse.action.type === 'fail') {
+      if (agentResponse.action?.type === 'fail') {
         await supabase.from('sessions').update({
           status: 'error', error_message: agentResponse.action.reason, completed_at: new Date().toISOString(),
         }).eq('id', state.session_id);
