@@ -56,6 +56,7 @@ import { CollapsibleScreenshots } from '@/components/operator/CollapsibleScreens
 import { ScreenshotAnnotator } from '@/components/operator/ScreenshotAnnotator';
 // Logo removed - will be added later
 import { MultiSessionManager } from '@/components/operator/MultiSessionManager';
+import { TaskProgressIndicator } from '@/components/TaskProgressIndicator';
 
 interface TaskSummary {
   id: string;
@@ -68,6 +69,7 @@ interface TaskSummary {
   sessionsRunning: number;
   startedAt: string | null;
   lastScreenshotUrl?: string | null;
+  activeSessionIds: string[];
 }
 
 interface ActiveSession {
@@ -300,7 +302,7 @@ const Operator = () => {
         (tasks || []).map(async (task) => {
           const { data: sessions } = await supabase
             .from('sessions')
-            .select('status')
+            .select('id, status')
             .eq('task_id', task.id);
           
           const completed = sessions?.filter(s => s.status === 'success').length || 0;
@@ -308,6 +310,7 @@ const Operator = () => {
           const running = sessions?.filter(s => s.status === 'running').length || 0;
           const total = sessions?.length || 0;
           const progress = total > 0 ? Math.round((completed / total) * 100) : 0;
+          const activeSessionIds = sessions?.filter(s => s.status === 'running').map(s => s.id) || [];
           
           return {
             id: task.id,
@@ -319,6 +322,7 @@ const Operator = () => {
             sessionsFailed: failed,
             sessionsRunning: running,
             startedAt: task.started_at,
+            activeSessionIds,
           };
         })
       );
@@ -344,7 +348,7 @@ const Operator = () => {
         (tasks || []).map(async (task) => {
           const { data: sessions } = await supabase
             .from('sessions')
-            .select('status, last_screenshot_url')
+            .select('id, status, last_screenshot_url')
             .eq('task_id', task.id)
             .order('updated_at', { ascending: false });
           
@@ -353,6 +357,7 @@ const Operator = () => {
           const running = sessions?.filter(s => s.status === 'running').length || 0;
           const total = sessions?.length || 0;
           const progress = total > 0 ? Math.round((completed / total) * 100) : 0;
+          const activeSessionIds = sessions?.filter(s => s.status === 'running').map(s => s.id) || [];
           
           // Get the last screenshot from any session
           const lastScreenshot = sessions?.find(s => s.last_screenshot_url)?.last_screenshot_url;
@@ -368,6 +373,7 @@ const Operator = () => {
             sessionsRunning: running,
             startedAt: task.started_at,
             lastScreenshotUrl: lastScreenshot,
+            activeSessionIds,
           };
         })
       );
@@ -1168,6 +1174,19 @@ const Operator = () => {
                         </Button>
                       </div>
                     </div>
+                    
+                    {/* Animated progress indicator for active sessions */}
+                    {task.activeSessionIds.length > 0 && (
+                      <div className="mt-2">
+                        {task.activeSessionIds.slice(0, 1).map(sessionId => (
+                          <TaskProgressIndicator 
+                            key={sessionId} 
+                            sessionId={sessionId} 
+                          />
+                        ))}
+                      </div>
+                    )}
+                    
                     {/* Progress bar */}
                     <div className="progress-glass">
                       <div 
