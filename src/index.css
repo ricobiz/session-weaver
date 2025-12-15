@@ -105,6 +105,17 @@
     overflow-x: hidden;
   }
 
+  /* Fix Radix ScrollArea viewport width issue */
+  [data-radix-scroll-area-viewport] {
+    max-width: 100% !important;
+    overflow-x: hidden !important;
+  }
+
+  [data-radix-scroll-area-viewport] > div {
+    max-width: 100% !important;
+    display: block !important;
+  }
+
   body {
     @apply bg-background text-foreground font-sans antialiased;
     font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
