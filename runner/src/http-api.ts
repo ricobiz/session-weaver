@@ -105,13 +105,6 @@ async function ensureBrowser(): Promise<Page> {
   
   return testPage;
 }
-  
-  if (!testPage || testPage.isClosed()) {
-    testPage = await testContext!.newPage();
-  }
-  
-  return testPage;
-}
 
 async function executeAction(req: ExecuteRequest): Promise<ExecuteResponse> {
   const logs: string[] = [];
