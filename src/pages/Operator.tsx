@@ -1032,14 +1032,14 @@ const Operator = () => {
 
             {/* Active Tasks as glass cards */}
             {activeTasks.length > 0 && (
-              <div className="space-y-3" style={{ maxWidth: '100%', overflow: 'hidden' }}>
+              <div className="space-y-3">
                 <span className="text-xs uppercase tracking-wider text-muted-foreground/60 font-semibold flex items-center gap-2">
                   <Activity className="w-3.5 h-3.5" />
                   Active Tasks
                 </span>
                 {activeTasks.map((task) => (
-                  <div key={task.id} className="task-card task-card-active overflow-hidden" style={{ maxWidth: '100%' }}>
-                    <div className="flex items-center gap-3 overflow-hidden">
+                  <div key={task.id} className="task-card task-card-active">
+                    <div className="flex items-center gap-3">
                       {task.status === 'paused' ? (
                         <div className="w-8 h-8 rounded-lg bg-warning/20 flex items-center justify-center">
                           <Pause className="w-4 h-4 text-warning" />
@@ -1350,7 +1350,7 @@ const Operator = () => {
             )}
             
             {/* Input Row */}
-            <div className="flex items-end gap-2 overflow-hidden" style={{ maxWidth: '100%' }}>
+            <div className="flex items-end gap-2">
               {/* File Upload Button */}
               <input
                 type="file"
