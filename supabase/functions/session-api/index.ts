@@ -336,7 +336,32 @@ serve(async (req) => {
       });
     }
 
-    // GET /stats - Get dashboard stats
+    // POST /profiles/:id/fingerprint - Update profile fingerprint
+    if (req.method === 'POST' && path.match(/^\/profiles\/[^/]+\/fingerprint$/)) {
+      const profileId = path.split('/')[2];
+      const { fingerprint } = await req.json();
+
+      const { error } = await supabase
+        .from('profiles')
+        .update({ 
+          fingerprint: fingerprint,
+          last_active: new Date().toISOString()
+        })
+        .eq('id', profileId);
+
+      if (error) {
+        console.error('Failed to update fingerprint:', error);
+        return new Response(JSON.stringify({ error: 'Failed to update fingerprint' }), {
+          status: 500,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      console.log(`Saved fingerprint for profile ${profileId}`);
+      return new Response(JSON.stringify({ success: true }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
     if (req.method === 'GET' && path === '/stats') {
       const [
         { count: activeCount },
