@@ -3,7 +3,7 @@ import { chromium } from 'playwright-extra';
 import { Browser, BrowserContext, Page } from 'playwright';
 import StealthPlugin from 'puppeteer-extra-plugin-stealth';
 import { log } from './logger';
-import { generateFingerprint, getRandomPreset, getFingerprintScript, Fingerprint } from './stealth/fingerprint';
+import { generateFingerprint, injectFingerprint, getFingerprintedContextOptions, clearFingerprintCache } from './stealth/fingerprint';
 import { warmupBrowser, generateCookiesForDomain, saveBrowserState, loadBrowserState, BrowserState } from './stealth/warmup';
 import { 
   humanType, 
@@ -64,28 +64,36 @@ function addLog(message: string) {
 }
 
 // Store current fingerprint for the session
-let currentFingerprint: Fingerprint | null = null;
+let currentFingerprint: any = null;
 
 async function ensureBrowser(): Promise<Page> {
   if (!testBrowser || !testBrowser.isConnected()) {
-    addLog('Launching browser with playwright-extra stealth + fingerprint consistency...');
+    addLog('Launching browser with fingerprint-generator + fingerprint-injector...');
     
-    // Generate consistent fingerprint for this session
-    currentFingerprint = generateFingerprint(getRandomPreset());
+    // Generate fingerprint using Apify libraries (or fallback)
+    currentFingerprint = await generateFingerprint({
+      browsers: [{ name: 'chrome', minVersion: 100 }],
+      devices: ['desktop'],
+      operatingSystems: ['windows', 'macos'],
+      locales: ['en-US', 'en'],
+    });
+    
+    const fp = currentFingerprint.fingerprint || currentFingerprint;
+    const nav = fp.navigator || {};
+    const screen = fp.screen || {};
     
     // playwright-extra + stealth plugin handles base anti-detection
     testBrowser = await chromium.launch({
       headless: process.env.HEADLESS !== 'false',
       args: [
         '--disable-blink-features=AutomationControlled',
-        `--window-size=${currentFingerprint.screen.width},${currentFingerprint.screen.height}`,
+        `--window-size=${screen.width || 1920},${screen.height || 1080}`,
         '--start-maximized',
         '--no-first-run',
         '--no-default-browser-check',
         '--no-sandbox',
         '--disable-setuid-sandbox',
         '--disable-dev-shm-usage',
-        // Don't disable GPU for better WebGL consistency
         '--disable-software-rasterizer',
       ],
       ignoreDefaultArgs: ['--enable-automation'],
@@ -94,50 +102,33 @@ async function ensureBrowser(): Promise<Page> {
     testContext = await testBrowser.newContext({
       bypassCSP: true,
       viewport: { 
-        width: currentFingerprint.screen.width, 
-        height: currentFingerprint.screen.height 
+        width: screen.width || 1920, 
+        height: screen.height || 1080 
       },
       screen: {
-        width: currentFingerprint.screen.width,
-        height: currentFingerprint.screen.height
+        width: screen.width || 1920,
+        height: screen.height || 1080
       },
-      userAgent: currentFingerprint.userAgent,
-      locale: 'en-US',
+      userAgent: nav.userAgent,
+      locale: nav.language || 'en-US',
       timezoneId: 'America/New_York',
-      deviceScaleFactor: currentFingerprint.screen.pixelRatio,
+      deviceScaleFactor: screen.devicePixelRatio || screen.pixelRatio || 1,
       colorScheme: 'light',
     });
     
-    // Apply fingerprint consistency script via CDP
+    // Inject fingerprint using fingerprint-injector (or fallback)
+    const injected = await injectFingerprint(testContext, currentFingerprint);
+    addLog(`Fingerprint injection: ${injected ? 'success' : 'fallback used'}`);
+    
     testPage = await testContext.newPage();
     
-    try {
-      const cdpSession = await testContext.newCDPSession(testPage);
-      await cdpSession.send('Page.addScriptToEvaluateOnNewDocument', {
-        source: getFingerprintScript(currentFingerprint)
-      });
-      await cdpSession.detach();
-      addLog('CDP fingerprint patches applied');
-    } catch (cdpError) {
-      addLog('CDP not available, fingerprint may be inconsistent');
-    }
-    
-    addLog(`Browser ready with fingerprint: ${currentFingerprint.platform}, ${currentFingerprint.screen.width}x${currentFingerprint.screen.height}`);
+    addLog(`Browser ready with fingerprint: ${nav.platform || 'Unknown'}, ${screen.width}x${screen.height}`);
   }
   
   if (!testPage || testPage.isClosed()) {
     testPage = await testContext!.newPage();
-    
-    // Re-apply fingerprint script to new pages
-    if (currentFingerprint) {
-      try {
-        const cdpSession = await testContext!.newCDPSession(testPage);
-        await cdpSession.send('Page.addScriptToEvaluateOnNewDocument', {
-          source: getFingerprintScript(currentFingerprint)
-        });
-        await cdpSession.detach();
-      } catch (e) {}
-    }
+    // Fingerprint already applied to context via injectFingerprint
+    addLog('New page created with fingerprint context');
   }
   
   return testPage;
