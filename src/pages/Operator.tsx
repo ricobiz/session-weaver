@@ -34,6 +34,7 @@ import {
   MessageSquare,
   ChevronDown,
   History,
+  Layers,
 } from 'lucide-react';
 import { OperatorBalanceHeader } from '@/components/operator/OperatorBalanceHeader';
 import {
@@ -45,6 +46,8 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { TaskPlanner } from '@/components/TaskPlanner';
 import { TaskSupervisor } from '@/components/TaskSupervisor';
+import { ChatScreenshot } from '@/components/operator/ChatScreenshot';
+import { MultiSessionManager } from '@/components/operator/MultiSessionManager';
 
 interface TaskSummary {
   id: string;
@@ -82,13 +85,15 @@ interface RunnerHealth {
 
 interface ChatMessage {
   id: string;
-  type: 'user' | 'system' | 'screenshot' | 'error' | 'success' | 'planning' | 'supervisor' | 'ai';
+  type: 'user' | 'system' | 'screenshot' | 'error' | 'success' | 'planning' | 'supervisor' | 'ai' | 'action_screenshot';
   content: string;
   timestamp: Date;
   sessionId?: string;
   imageUrl?: string;
   taskId?: string;
   userCommand?: string;
+  profileName?: string;
+  actionName?: string;
 }
 
 interface ConversationMessage {
@@ -115,7 +120,9 @@ const Operator = () => {
     return localStorage.getItem(STORAGE_KEY_MODEL) || 'anthropic/claude-3.5-sonnet';
   });
   const [loadingScreenshots, setLoadingScreenshots] = useState<Set<string>>(new Set());
+  const [showSessionPanel, setShowSessionPanel] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const lastScreenshotRef = useRef<Map<string, string>>(new Map());
 
   // Chat sessions management
   const [chatSessions, setChatSessions] = useState<ChatSession[]>(() => {
@@ -374,6 +381,41 @@ const Operator = () => {
     },
     refetchInterval: 2000,
   });
+
+  // Auto-post screenshots on successful actions
+  useEffect(() => {
+    activeSessions.forEach(session => {
+      if (session.status === 'running' && session.last_screenshot_url) {
+        const lastUrl = lastScreenshotRef.current.get(session.id);
+        if (session.last_screenshot_url !== lastUrl) {
+          // New screenshot available - add to chat
+          lastScreenshotRef.current.set(session.id, session.last_screenshot_url);
+          
+          // Only add to chat if we have an active session and it's a significant action
+          const significantActions = ['click', 'like', 'comment', 'play', 'open'];
+          const isSignificant = significantActions.includes(session.current_action || '');
+          
+          if (activeSessionId && isSignificant) {
+            const screenshotMsg: ChatMessage = {
+              id: Math.random().toString(36).slice(2),
+              type: 'action_screenshot',
+              content: `${session.profiles?.name || 'Agent'}: ${session.current_action || 'действие'}`,
+              timestamp: new Date(),
+              sessionId: session.id,
+              imageUrl: session.last_screenshot_url,
+              profileName: session.profiles?.name || 'Agent',
+              actionName: session.current_action,
+            };
+            setChatSessions(prev => prev.map(s => 
+              s.id === activeSessionId 
+                ? { ...s, messages: [...s.messages, screenshotMsg] }
+                : s
+            ));
+          }
+        }
+      }
+    });
+  }, [activeSessions, activeSessionId]);
 
   // Stats
   const totalRunning = activeSessions.filter(s => s.status === 'running').length;
@@ -767,6 +809,19 @@ const Operator = () => {
           </div>
           
           <div className="flex items-center gap-2">
+            {/* Sessions Panel Toggle */}
+            <Button 
+              variant={showSessionPanel ? "secondary" : "ghost"} 
+              size="sm" 
+              className="h-7 px-2 gap-1"
+              onClick={() => setShowSessionPanel(!showSessionPanel)}
+            >
+              <Layers className="h-3.5 w-3.5" />
+              {totalRunning > 0 && (
+                <span className="text-[10px] font-medium">{totalRunning}</span>
+              )}
+            </Button>
+            
             <OperatorBalanceHeader 
               selectedModel={selectedModel}
               onModelChange={handleModelChange}
@@ -833,45 +888,31 @@ const Operator = () => {
         </div>
       </div>
 
-      {/* Chat Area - Main content */}
-      <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
-        <ScrollArea className="flex-1" ref={scrollRef}>
-          <div className="p-3 space-y-3 max-w-full overflow-hidden">
-            {/* Active Sessions as compact cards */}
-            {activeSessions.length > 0 && (
-              <div className="space-y-2">
-                <span className="text-[10px] uppercase tracking-wider text-muted-foreground/60 font-medium">
-                  Active Workers
-                </span>
-                <div className="flex flex-wrap gap-1.5">
-                  {activeSessions.map((session) => (
-                    <button
-                      key={session.id}
-                      onClick={() => requestScreenshot(session.id)}
-                      disabled={loadingScreenshots.has(session.id)}
-                      className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-card/80 border border-border/50 hover:border-primary/50 hover:bg-card transition-all text-left group"
-                    >
-                      <div className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${
-                        session.status === 'running' ? 'bg-primary animate-pulse' :
-                        session.status === 'queued' ? 'bg-muted-foreground' :
-                        'bg-amber-500'
-                      }`} />
-                      <span className="text-[10px] font-medium truncate max-w-[60px]">
-                        {session.profiles?.name || session.id.slice(0, 6)}
-                      </span>
-                      <span className="text-[9px] text-muted-foreground">
-                        {session.current_step || 0}/{session.total_steps || '?'}
-                      </span>
-                      {loadingScreenshots.has(session.id) ? (
-                        <Loader2 className="w-2.5 h-2.5 animate-spin text-muted-foreground" />
-                      ) : (
-                        <Image className="w-2.5 h-2.5 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
-                      )}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
+      {/* Main Layout */}
+      <div className="flex-1 flex min-h-0 overflow-hidden">
+        {/* Session Panel (collapsible) */}
+        {showSessionPanel && (
+          <div className="w-72 border-r border-border/30 bg-card/20 p-3 flex-shrink-0 overflow-y-auto">
+            <MultiSessionManager
+              onSessionSelect={(sessionId) => requestScreenshot(sessionId)}
+              onScreenshotRequest={(sessionId, imageUrl, profileName) => {
+                addMessage({
+                  type: 'action_screenshot',
+                  content: `Скриншот от ${profileName}`,
+                  sessionId,
+                  imageUrl,
+                  profileName,
+                });
+              }}
+              maxConcurrent={10}
+            />
+          </div>
+        )}
+
+        {/* Chat Area */}
+        <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
+          <ScrollArea className="flex-1" ref={scrollRef}>
+            <div className="p-3 space-y-3 max-w-full overflow-hidden">
 
             {/* Active Tasks as compact items */}
             {activeTasks.length > 0 && (
@@ -1063,8 +1104,25 @@ const Operator = () => {
                   </div>
                 )}
 
+                {/* Action screenshot messages - compact visual feedback */}
+                {msg.type === 'action_screenshot' && msg.imageUrl && (
+                  <div className="flex gap-2 justify-start">
+                    <div className="w-6 h-6 rounded-full bg-emerald-500/10 flex items-center justify-center flex-shrink-0">
+                      <CheckCircle2 className="w-3 h-3 text-emerald-500" />
+                    </div>
+                    <div className="max-w-sm">
+                      <ChatScreenshot
+                        imageUrl={msg.imageUrl}
+                        profileName={msg.profileName}
+                        timestamp={msg.timestamp}
+                        action={msg.actionName}
+                      />
+                    </div>
+                  </div>
+                )}
+
                 {/* Regular messages */}
-                {msg.type !== 'planning' && msg.type !== 'supervisor' && (
+                {msg.type !== 'planning' && msg.type !== 'supervisor' && msg.type !== 'action_screenshot' && (
                   <div className={`flex gap-2 ${msg.type === 'user' ? 'justify-end' : 'justify-start'}`}>
                     {msg.type !== 'user' && (
                       <div className={`w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 ${
@@ -1195,6 +1253,7 @@ const Operator = () => {
               </Button>
             </div>
           </div>
+        </div>
         </div>
       </div>
     </div>
