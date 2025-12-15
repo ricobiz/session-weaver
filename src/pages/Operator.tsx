@@ -916,10 +916,10 @@ const Operator = () => {
     }));
 
   return (
-    <div className="h-screen w-full bg-background flex flex-col overflow-hidden box-border max-w-[100vw]">
+    <div className="h-screen w-screen bg-background flex flex-col overflow-hidden max-w-full">
       {/* Minimal Header */}
-      <header className="flex-shrink-0 glass-panel border-x-0 border-t-0 px-2 py-1">
-        <div className="flex items-center justify-between w-full">
+      <header className="flex-shrink-0 glass-panel border-x-0 border-t-0 px-2 py-1 w-full">
+        <div className="flex items-center justify-between w-full max-w-full overflow-hidden">
           {/* Left: Model + New Chat */}
           <div className="flex items-center gap-1.5 min-w-0">
             {/* Model selector - compact with text */}
@@ -1004,7 +1004,7 @@ const Operator = () => {
       </header>
 
       {/* Main Layout */}
-      <div className="flex-1 flex min-h-0 overflow-hidden w-full max-w-[100vw]">
+      <div className="flex-1 flex min-h-0 overflow-hidden w-full max-w-full">
         {/* Session Panel (collapsible) - hidden on small screens */}
         {showSessionPanel && (
           <div className="hidden sm:flex w-56 lg:w-72 glass-panel border-t-0 border-l-0 flex-shrink-0 flex-col overflow-hidden">
