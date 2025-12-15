@@ -96,11 +96,11 @@ export function ModelSelector({ value, onChange, compact = true }: ModelSelector
         <Button 
           variant="ghost" 
           size="sm" 
-          className={compact ? "h-8 gap-1.5 text-xs px-2.5 rounded-xl bg-muted/30 hover:bg-muted/50" : "gap-2"}
+          className={compact ? "h-8 gap-1.5 text-xs px-2 rounded-lg bg-muted/30 hover:bg-muted/50" : "gap-2"}
         >
-          <Cpu className="w-3.5 h-3.5 text-primary" />
-          <span className="max-w-[100px] truncate">{displayName}</span>
-          <ChevronDown className="w-3 h-3 opacity-50" />
+          <Cpu className="w-3.5 h-3.5 text-primary flex-shrink-0" />
+          <span className="max-w-[80px] truncate hidden sm:inline">{displayName}</span>
+          <ChevronDown className="w-3 h-3 opacity-50 flex-shrink-0" />
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-80 glass-panel border-border/50">
