@@ -916,10 +916,10 @@ const Operator = () => {
     }));
 
   return (
-    <div className="h-screen bg-background flex flex-col overflow-hidden" style={{ width: '100vw', maxWidth: '100vw', boxSizing: 'border-box', border: '2px solid red' }}>
+    <div className="h-screen bg-background flex flex-col overflow-hidden w-full" style={{ maxWidth: '100%', boxSizing: 'border-box', border: '2px solid red' }}>
       {/* Minimal Header */}
-      <header className="flex-shrink-0 glass-panel border-x-0 border-t-0 px-2 py-1" style={{ width: '100%', maxWidth: '100%', boxSizing: 'border-box', border: '2px solid lime' }}>
-        <div className="flex items-center justify-between" style={{ width: '100%', maxWidth: '100%', overflow: 'hidden', border: '1px solid cyan' }}>
+      <header className="flex-shrink-0 glass-panel border-x-0 border-t-0 px-2 py-1 w-full" style={{ maxWidth: '100%', boxSizing: 'border-box', border: '2px solid lime' }}>
+        <div className="flex items-center justify-between w-full" style={{ maxWidth: '100%', overflow: 'hidden', border: '1px solid cyan' }}>
           {/* Left: Model + New Chat */}
           <div className="flex items-center gap-1.5 min-w-0">
             {/* Model selector - compact with text */}
