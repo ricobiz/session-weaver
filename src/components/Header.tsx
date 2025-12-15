@@ -49,13 +49,13 @@ export function Header() {
         <div className="flex items-center gap-1.5 sm:gap-2 flex-shrink-0">
           {/* Operator Mode Link */}
           <Button 
-            variant="ghost" 
+            variant="outline" 
             size="sm" 
             asChild 
-            className="h-7 sm:h-8 px-2 sm:px-3 gap-1 text-muted-foreground text-xs"
+            className="h-7 px-2 rounded-lg border-primary/30 bg-primary/10 hover:bg-primary/20 text-primary text-[10px] font-medium"
           >
             <Link to="/">
-              <Zap className="w-3.5 h-3.5" />
+              <Zap className="w-3 h-3 mr-1" />
               <span className="hidden sm:inline">Operator</span>
             </Link>
           </Button>
