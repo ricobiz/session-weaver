@@ -1004,7 +1004,7 @@ const Operator = () => {
       </header>
 
       {/* Main Layout */}
-      <div className="flex-1 flex min-h-0 overflow-hidden w-full max-w-full">
+      <div className="flex-1 flex min-h-0 overflow-hidden" style={{ width: '100%', maxWidth: '100%', border: '2px solid yellow' }}>
         {/* Session Panel (collapsible) - hidden on small screens */}
         {showSessionPanel && (
           <div className="hidden sm:flex w-56 lg:w-72 glass-panel border-t-0 border-l-0 flex-shrink-0 flex-col overflow-hidden">
@@ -1016,13 +1016,13 @@ const Operator = () => {
         )}
 
         {/* Chat Area */}
-        <div className="flex-1 flex flex-col min-h-0 min-w-0 overflow-hidden">
+        <div className="flex-1 flex flex-col min-h-0 min-w-0 overflow-hidden" style={{ border: '2px solid orange' }}>
           <ScrollArea className="flex-1 scrollbar-thin" ref={scrollRef}>
-            <div className="p-3 sm:p-4 space-y-3 max-w-3xl mx-auto w-full">
+            <div className="p-3 sm:p-4 space-y-3 mx-auto" style={{ maxWidth: '100%', width: '100%', border: '2px solid magenta' }}>
 
             {/* Active Tasks as glass cards */}
             {activeTasks.length > 0 && (
-              <div className="space-y-3">
+              <div className="space-y-3" style={{ maxWidth: '100%', overflow: 'hidden' }}>
                 <span className="text-xs uppercase tracking-wider text-muted-foreground/60 font-semibold flex items-center gap-2">
                   <Activity className="w-3.5 h-3.5" />
                   Active Tasks
@@ -1308,8 +1308,8 @@ const Operator = () => {
         </ScrollArea>
 
         {/* Input Area */}
-        <div className="flex-shrink-0 glass-panel border-t-0 border-x-0 p-2 sm:p-3">
-          <div className="max-w-3xl mx-auto space-y-2 w-full">
+        <div className="flex-shrink-0 glass-panel border-t-0 border-x-0 p-2 sm:p-3" style={{ width: '100%', maxWidth: '100%', border: '2px solid white' }}>
+          <div className="mx-auto space-y-2" style={{ width: '100%', maxWidth: '100%', overflow: 'hidden' }}>
             {/* Attached Files Preview */}
             {attachedFiles.length > 0 && (
               <div className="flex flex-wrap gap-2 p-2 rounded-xl bg-muted/30 border border-border/50">
