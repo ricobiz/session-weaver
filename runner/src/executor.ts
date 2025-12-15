@@ -1,4 +1,6 @@
-import { chromium, Browser, BrowserContext, Page } from 'playwright';
+import { chromium } from 'playwright-extra';
+import { Browser, BrowserContext, Page } from 'playwright';
+import StealthPlugin from 'puppeteer-extra-plugin-stealth';
 import { Job, Session, ScenarioStep, ActionContext, LogLevel, StorageState, ResumeMetadata, StepState } from './types';
 import { ApiClient } from './api';
 import { getActionHandler } from './actions';
@@ -12,9 +14,11 @@ import {
   DEFAULT_RETRY_CONFIG 
 } from './retry';
 import { detectCaptcha, resolveCaptcha } from './captcha';
-import { applyStealthPatches, applyPagePatches } from './stealth';
 import { generateFingerprint, getRandomPreset } from './stealth/fingerprint';
 import { AutonomousExecutor } from './autonomous';
+
+// Apply stealth plugin globally
+chromium.use(StealthPlugin());
 
 export interface ExecutorConfig {
   headless: boolean;
@@ -519,52 +523,8 @@ export class SessionExecutor {
 
     const context = await browser.newContext(contextOptions);
 
-    // === CDP: Remove webdriver flag BEFORE any page loads ===
-    // This is critical because some sites check webdriver before our init scripts run
-    try {
-      const cdpSession = await context.newCDPSession(await context.newPage().then(p => { p.close(); return context.pages()[0] || context.newPage(); }).catch(() => context.newPage()));
-      
-      // Execute CDP command to remove webdriver
-      await cdpSession.send('Page.addScriptToEvaluateOnNewDocument', {
-        source: `
-          // Remove webdriver flag at the earliest possible moment
-          Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
-          
-          // Remove phantom properties
-          delete window.callPhantom;
-          delete window._phantom;
-          delete window.phantom;
-          Object.defineProperty(window, 'callPhantom', { get: () => undefined });
-          Object.defineProperty(window, '_phantom', { get: () => undefined });
-          Object.defineProperty(window, 'phantom', { get: () => undefined });
-          
-          // Remove selenium/driver properties from document
-          ['__webdriver_script_fn', '__driver_evaluate', '__webdriver_evaluate', 
-           '__selenium_evaluate', '__fxdriver_evaluate', 'webdriver', 'driver',
-           '__webdriver_unwrapped', '__selenium_unwrapped', '__fxdriver_unwrapped']
-          .forEach(prop => {
-            try { delete document[prop]; } catch(e) {}
-            try { Object.defineProperty(document, prop, { get: () => undefined }); } catch(e) {}
-          });
-          
-          // Remove $cdc_ patterns (Chrome DevTools detection)
-          Object.keys(document).filter(k => /^\\$cdc_|^\\$chrome_/.test(k)).forEach(k => {
-            try { delete document[k]; } catch(e) {}
-          });
-          Object.keys(window).filter(k => /^\\$cdc_|^\\$chrome_/.test(k)).forEach(k => {
-            try { delete window[k]; } catch(e) {}
-          });
-        `
-      });
-      
-      await cdpSession.detach();
-    } catch (cdpError) {
-      // CDP not available in some environments, fall back to init script only
-      globalLog('debug', 'CDP session not available, using init script only');
-    }
-
-    // Apply stealth patches to context (backup/additional patches)
-    await applyStealthPatches(context, fingerprint);
+    // playwright-extra stealth plugin handles anti-detection automatically
+    // No need for manual CDP patches or applyStealthPatches
 
     return context;
   }
