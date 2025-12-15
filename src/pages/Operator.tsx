@@ -654,6 +654,25 @@ const Operator = () => {
       console.error('Failed to update task status:', e);
     }
 
+    // Get the last screenshot from task sessions
+    let lastScreenshotUrl: string | null = null;
+    let completedCount = 0;
+    let failedCount = 0;
+    try {
+      const { data: taskSessions } = await supabase
+        .from('sessions')
+        .select('status, last_screenshot_url')
+        .eq('task_id', taskId);
+      
+      if (taskSessions) {
+        completedCount = taskSessions.filter(s => s.status === 'success').length;
+        failedCount = taskSessions.filter(s => s.status === 'error').length;
+        lastScreenshotUrl = taskSessions.find(s => s.last_screenshot_url)?.last_screenshot_url || null;
+      }
+    } catch (e) {
+      console.error('Failed to fetch task sessions:', e);
+    }
+
     // Remove supervisor message and check if we already have a completion message for this task
     setChatSessions(prev => prev.map(s => {
       if (s.id !== activeSessionId) return s;
@@ -681,10 +700,15 @@ const Operator = () => {
     );
     
     if (!alreadyHasCompletion) {
+      const resultContent = success 
+        ? `✓ Задача выполнена! (${completedCount} успешно${failedCount > 0 ? `, ${failedCount} с ошибками` : ''})`
+        : `✗ Задача завершена с ошибками (${completedCount} успешно, ${failedCount} неудачно)`;
+      
       addMessage({
         type: success ? 'success' : 'error',
-        content: success ? 'Задача выполнена!' : 'Задача завершена с ошибками',
+        content: resultContent,
         taskId,
+        imageUrl: lastScreenshotUrl || undefined,
       });
     }
 
@@ -1387,12 +1411,12 @@ const Operator = () => {
                         <div className="mt-3 glass-card overflow-hidden max-w-[320px]">
                           <img 
                             src={msg.imageUrl} 
-                            alt="Session screenshot" 
+                            alt="Screenshot" 
                             className="w-full h-auto"
                             loading="lazy"
                           />
                           <div className="p-3 flex items-center justify-between text-xs text-muted-foreground">
-                            <span>Session: {msg.sessionId?.slice(0, 8)}</span>
+                            <span>{msg.sessionId ? `Session: ${msg.sessionId.slice(0, 8)}` : 'Результат задачи'}</span>
                             <a 
                               href={msg.imageUrl} 
                               target="_blank" 
