@@ -1027,9 +1027,16 @@ const Operator = () => {
               onModelChange={handleModelChange}
             />
             
-            <Button variant="ghost" size="sm" asChild className="h-7 w-7 p-0 rounded-lg hover:bg-muted/50" title="Developer Mode">
+            <Button 
+              variant="outline" 
+              size="sm" 
+              asChild 
+              className="h-7 px-2 rounded-lg border-primary/30 bg-primary/10 hover:bg-primary/20 text-primary text-[10px] font-medium"
+              title="Developer Mode"
+            >
               <Link to="/dashboard">
-                <Code2 className="h-3.5 w-3.5" />
+                <Code2 className="h-3 w-3 mr-1" />
+                <span className="hidden sm:inline">Dev</span>
               </Link>
             </Button>
           </div>
