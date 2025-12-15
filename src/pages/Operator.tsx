@@ -1028,8 +1028,8 @@ const Operator = () => {
                   Active Tasks
                 </span>
                 {activeTasks.map((task) => (
-                  <div key={task.id} className="task-card task-card-active">
-                    <div className="flex items-center gap-3">
+                  <div key={task.id} className="task-card task-card-active overflow-hidden" style={{ maxWidth: '100%' }}>
+                    <div className="flex items-center gap-3 overflow-hidden">
                       {task.status === 'paused' ? (
                         <div className="w-8 h-8 rounded-lg bg-warning/20 flex items-center justify-center">
                           <Pause className="w-4 h-4 text-warning" />
@@ -1340,7 +1340,7 @@ const Operator = () => {
             )}
             
             {/* Input Row */}
-            <div className="flex items-end gap-2">
+            <div className="flex items-end gap-2 overflow-hidden" style={{ maxWidth: '100%' }}>
               {/* File Upload Button */}
               <input
                 type="file"
@@ -1361,7 +1361,7 @@ const Operator = () => {
               </Button>
               
               {/* Text Input */}
-              <div className="flex-1 glass-input rounded-xl overflow-hidden">
+              <div className="flex-1 glass-input rounded-xl overflow-hidden min-w-0">
                 <Textarea
                   value={command}
                   onChange={(e) => setCommand(e.target.value)}
