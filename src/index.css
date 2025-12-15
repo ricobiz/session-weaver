@@ -63,6 +63,15 @@
     --glow-warning: 0 0 25px hsl(45 95% 55% / 0.3);
     --glow-error: 0 0 25px hsl(0 75% 55% / 0.3);
 
+    /* Neon border colors for animated borders */
+    --neon-primary: 195 90% 55%;
+    --neon-accent: 280 80% 65%;
+    --neon-success: 155 75% 50%;
+    --neon-warning: 45 95% 55%;
+    --neon-error: 0 75% 55%;
+    --neon-cyan: 185 100% 50%;
+    --neon-pink: 330 100% 65%;
+
     --gradient-glass: linear-gradient(135deg, hsl(225 25% 18% / 0.8) 0%, hsl(225 25% 12% / 0.6) 100%);
     --gradient-primary: linear-gradient(135deg, hsl(195 90% 55%) 0%, hsl(195 80% 45%) 100%);
     --gradient-accent: linear-gradient(135deg, hsl(195 90% 55%) 0%, hsl(280 80% 65%) 100%);
@@ -277,13 +286,47 @@
   /* Task Card */
   .task-card {
     @apply glass-card p-4 space-y-3;
+    position: relative;
+    isolation: isolate;
+    overflow: hidden;
+  }
+
+  .task-card::before {
+    content: '';
+    position: absolute;
+    inset: -2px;
+    z-index: -1;
+    border-radius: inherit;
+    background: conic-gradient(
+      from var(--neon-angle, 0deg),
+      transparent 0deg,
+      transparent 60deg,
+      hsl(var(--neon-primary) / 0.8) 90deg,
+      hsl(var(--neon-cyan) / 0.6) 120deg,
+      transparent 150deg,
+      transparent 240deg,
+      hsl(var(--neon-accent) / 0.6) 270deg,
+      hsl(var(--neon-primary) / 0.4) 300deg,
+      transparent 330deg
+    );
+    animation: neon-border-spin 5s linear infinite;
+  }
+
+  .task-card::after {
+    content: '';
+    position: absolute;
+    inset: 1px;
+    z-index: -1;
+    border-radius: inherit;
+    background: hsl(var(--card));
   }
 
   .task-card-active {
-    border-color: hsl(var(--primary) / 0.4);
-    box-shadow: 
-      0 8px 32px rgba(0, 0, 0, 0.15),
-      var(--glow-primary);
+    border-color: transparent;
+  }
+
+  .task-card-active::before {
+    opacity: 1;
   }
 
   /* Session Chip */
@@ -366,4 +409,158 @@
   .glow-primary { box-shadow: var(--glow-primary); }
   .glow-accent { box-shadow: var(--glow-accent); }
   .glow-success { box-shadow: var(--glow-success); }
+
+  /* ========== NEON BORDER ANIMATION ========== */
+  @keyframes neon-border-spin {
+    0% { --neon-angle: 0deg; }
+    100% { --neon-angle: 360deg; }
+  }
+
+  @property --neon-angle {
+    syntax: '<angle>';
+    initial-value: 0deg;
+    inherits: false;
+  }
+
+  /* Base neon border class */
+  .neon-border {
+    position: relative;
+    isolation: isolate;
+    overflow: hidden;
+    border-radius: var(--radius);
+  }
+
+  .neon-border::before {
+    content: '';
+    position: absolute;
+    inset: -2px;
+    z-index: -1;
+    border-radius: inherit;
+    background: conic-gradient(
+      from var(--neon-angle),
+      transparent 0deg,
+      transparent 60deg,
+      hsl(var(--neon-primary)) 90deg,
+      hsl(var(--neon-primary) / 0.8) 120deg,
+      transparent 150deg,
+      transparent 240deg,
+      hsl(var(--neon-accent)) 270deg,
+      hsl(var(--neon-accent) / 0.8) 300deg,
+      transparent 330deg
+    );
+    animation: neon-border-spin 4s linear infinite;
+  }
+
+  .neon-border::after {
+    content: '';
+    position: absolute;
+    inset: 1px;
+    z-index: -1;
+    border-radius: inherit;
+    background: hsl(var(--background));
+  }
+
+  /* Color variants */
+  .neon-border-primary::before {
+    background: conic-gradient(
+      from var(--neon-angle),
+      transparent 0deg,
+      transparent 90deg,
+      hsl(var(--neon-primary)) 120deg,
+      hsl(var(--neon-cyan)) 180deg,
+      transparent 210deg,
+      transparent 360deg
+    );
+  }
+
+  .neon-border-accent::before {
+    background: conic-gradient(
+      from var(--neon-angle),
+      transparent 0deg,
+      transparent 90deg,
+      hsl(var(--neon-accent)) 120deg,
+      hsl(var(--neon-pink)) 180deg,
+      transparent 210deg,
+      transparent 360deg
+    );
+  }
+
+  .neon-border-success::before {
+    background: conic-gradient(
+      from var(--neon-angle),
+      transparent 0deg,
+      transparent 90deg,
+      hsl(var(--neon-success)) 120deg,
+      hsl(var(--neon-cyan)) 180deg,
+      transparent 210deg,
+      transparent 360deg
+    );
+  }
+
+  /* Slow animation variant */
+  .neon-border-slow::before {
+    animation-duration: 6s;
+  }
+
+  /* Fast animation variant */
+  .neon-border-fast::before {
+    animation-duration: 2s;
+  }
+
+  /* Header/Footer edge glow - horizontal line */
+  .neon-edge {
+    position: relative;
+  }
+
+  .neon-edge::after {
+    content: '';
+    position: absolute;
+    left: 0;
+    right: 0;
+    height: 1px;
+    background: linear-gradient(
+      90deg,
+      transparent 0%,
+      hsl(var(--neon-primary) / 0.3) 20%,
+      hsl(var(--neon-primary)) 50%,
+      hsl(var(--neon-primary) / 0.3) 80%,
+      transparent 100%
+    );
+    animation: neon-edge-move 3s ease-in-out infinite;
+  }
+
+  .neon-edge-top::after {
+    top: 0;
+  }
+
+  .neon-edge-bottom::after {
+    bottom: 0;
+  }
+
+  @keyframes neon-edge-move {
+    0%, 100% {
+      background-position: -100% 0;
+      opacity: 0.5;
+    }
+    50% {
+      background-position: 100% 0;
+      opacity: 1;
+    }
+  }
+
+  /* Pulsing glow for edge */
+  .neon-edge-pulse::after {
+    animation: neon-edge-pulse 2s ease-in-out infinite;
+  }
+
+  @keyframes neon-edge-pulse {
+    0%, 100% {
+      opacity: 0.3;
+      box-shadow: 0 0 10px hsl(var(--neon-primary) / 0.3);
+    }
+    50% {
+      opacity: 1;
+      box-shadow: 0 0 20px hsl(var(--neon-primary) / 0.6);
+    }
+  }
 }

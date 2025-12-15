@@ -928,7 +928,7 @@ const Operator = () => {
       background: 'hsl(var(--background))'
     }}>
       {/* Minimal Header */}
-      <header className="flex-shrink-0 glass-panel border-x-0 border-t-0 px-2 py-1">
+      <header className="flex-shrink-0 glass-panel border-x-0 border-t-0 px-2 py-1 neon-edge neon-edge-bottom">
         <div className="flex items-center justify-between overflow-hidden">
           {/* Left: Model + New Chat */}
           <div className="flex items-center gap-1.5 min-w-0">
@@ -1318,7 +1318,7 @@ const Operator = () => {
         </ScrollArea>
 
         {/* Input Area */}
-        <div className="flex-shrink-0 glass-panel border-t-0 border-x-0 p-2 sm:p-3 w-full">
+        <div className="flex-shrink-0 glass-panel border-t-0 border-x-0 p-2 sm:p-3 w-full neon-edge neon-edge-top">
           <div className="space-y-2 w-full">
             {/* Attached Files Preview */}
             {attachedFiles.length > 0 && (
