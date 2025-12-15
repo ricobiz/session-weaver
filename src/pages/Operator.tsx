@@ -832,29 +832,30 @@ const Operator = () => {
 
   return (
     <div className="h-screen bg-background flex flex-col overflow-hidden">
-      {/* Compact Header */}
-      <header className="flex-shrink-0 border-b border-border/40 bg-background/95 backdrop-blur-sm px-2 py-1.5">
-        <div className="flex items-center justify-between gap-1">
+      {/* Glassmorphism Header */}
+      <header className="flex-shrink-0 floating-header px-4 py-3">
+        <div className="flex items-center justify-between gap-3">
           {/* Left: Logo + Chat selector */}
-          <div className="flex items-center gap-1.5 min-w-0 flex-1">
-            <div className="w-6 h-6 rounded-lg bg-gradient-to-br from-primary to-primary/60 flex items-center justify-center flex-shrink-0">
-              <Bot className="w-3 h-3 text-primary-foreground" />
+          <div className="flex items-center gap-3 min-w-0 flex-1">
+            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-primary via-primary/80 to-accent flex items-center justify-center flex-shrink-0 glow-primary">
+              <Bot className="w-4 h-4 text-primary-foreground" />
             </div>
             
-            {/* Chat Sessions Dropdown - compact */}
+            {/* Chat Sessions Dropdown */}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="sm" className="h-6 px-1.5 gap-1 text-muted-foreground min-w-0">
-                  <span className="text-[11px] truncate max-w-[60px]">
-                    {currentSession?.name || 'Chat'}
+                <Button variant="ghost" size="sm" className="h-8 px-3 gap-2 glass-card hover:border-primary/30">
+                  <MessageSquare className="h-3.5 w-3.5 text-primary" />
+                  <span className="text-sm font-medium truncate max-w-[100px]">
+                    {currentSession?.name || 'New Chat'}
                   </span>
-                  <ChevronDown className="h-2.5 w-2.5 flex-shrink-0" />
+                  <ChevronDown className="h-3 w-3 text-muted-foreground" />
                 </Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="start" className="w-56">
-                <DropdownMenuItem onClick={() => createNewSession()}>
-                  <Plus className="h-3.5 w-3.5 mr-2" />
-                  Новый чат
+              <DropdownMenuContent align="start" className="w-64 glass-panel">
+                <DropdownMenuItem onClick={() => createNewSession()} className="gap-2">
+                  <Plus className="h-4 w-4 text-primary" />
+                  <span>Новый чат</span>
                 </DropdownMenuItem>
                 {chatSessions.length > 0 && <DropdownMenuSeparator />}
                 {chatSessions.slice(0, 10).map(session => (
@@ -864,22 +865,22 @@ const Operator = () => {
                     className="flex items-center justify-between group"
                   >
                     <div className="flex items-center gap-2 flex-1 min-w-0">
-                      <History className="h-3 w-3 flex-shrink-0 text-muted-foreground" />
-                      <span className="truncate text-xs">{session.name}</span>
+                      <History className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground" />
+                      <span className="truncate text-sm">{session.name}</span>
                       {session.id === activeSessionId && (
-                        <span className="text-[9px] text-primary">●</span>
+                        <span className="w-1.5 h-1.5 rounded-full bg-primary" />
                       )}
                     </div>
                     <Button
                       variant="ghost"
                       size="sm"
-                      className="h-5 w-5 p-0 opacity-0 group-hover:opacity-100"
+                      className="h-6 w-6 p-0 opacity-0 group-hover:opacity-100"
                       onClick={(e) => {
                         e.stopPropagation();
                         deleteSession(session.id);
                       }}
                     >
-                      <Trash2 className="h-3 w-3 text-destructive" />
+                      <Trash2 className="h-3.5 w-3.5 text-destructive" />
                     </Button>
                   </DropdownMenuItem>
                 ))}
@@ -888,16 +889,32 @@ const Operator = () => {
           </div>
           
           {/* Right: Actions */}
-          <div className="flex items-center gap-1 flex-shrink-0">
+          <div className="flex items-center gap-2 flex-shrink-0">
+            {/* System Status */}
+            <div className="session-chip">
+              {systemOnline ? (
+                <>
+                  <div className="status-dot status-dot-success" />
+                  <span className="text-xs text-success font-medium">Online</span>
+                  <span className="text-xs text-muted-foreground">• {onlineRunners.length}</span>
+                </>
+              ) : (
+                <>
+                  <WifiOff className="w-3.5 h-3.5 text-destructive" />
+                  <span className="text-xs text-destructive font-medium">Offline</span>
+                </>
+              )}
+            </div>
+            
             {/* Sessions Panel Toggle */}
             <Button 
               variant={showSessionPanel ? "secondary" : "ghost"} 
               size="sm" 
-              className="h-6 w-6 p-0"
+              className={`h-8 w-8 p-0 rounded-xl ${showSessionPanel ? 'bg-primary/20 text-primary' : ''}`}
               onClick={() => setShowSessionPanel(!showSessionPanel)}
               title="Потоки"
             >
-              <Layers className="h-3.5 w-3.5" />
+              <Layers className="h-4 w-4" />
             </Button>
             
             <OperatorBalanceHeader 
@@ -905,63 +922,42 @@ const Operator = () => {
               onModelChange={handleModelChange}
             />
             
-            {/* Developer Mode - всегда видна */}
-            <Button variant="ghost" size="sm" asChild className="h-6 w-6 p-0 text-muted-foreground" title="Developer Mode">
+            {/* Developer Mode */}
+            <Button variant="ghost" size="sm" asChild className="h-8 w-8 p-0 rounded-xl hover:bg-accent/20 hover:text-accent" title="Developer Mode">
               <Link to="/dashboard">
-                <Code2 className="h-3.5 w-3.5" />
+                <Code2 className="h-4 w-4" />
               </Link>
             </Button>
           </div>
         </div>
       </header>
 
-      {/* Compact Stats Bar */}
-      <div className="flex-shrink-0 border-b border-border/30 bg-card/30 px-3 py-1.5">
-        <div className="flex items-center gap-3 text-[11px]">
-          {/* System Status */}
-          <div className="flex items-center gap-1.5">
-            {systemOnline ? (
-              <>
-                <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                <span className="text-emerald-500">Online</span>
-              </>
-            ) : (
-              <>
-                <WifiOff className="w-3 h-3 text-destructive" />
-                <span className="text-destructive">Offline</span>
-              </>
-            )}
-          </div>
-          
-          <Separator orientation="vertical" className="h-3" />
-          
+      {/* Stats Bar - glassmorphism */}
+      <div className="flex-shrink-0 glass-panel border-t-0 px-4 py-2.5">
+        <div className="flex items-center gap-4">
           {/* Quick Stats */}
-          <div className="flex items-center gap-3 text-muted-foreground">
-            <span className="flex items-center gap-1">
-              <Server className="w-3 h-3" />
-              {onlineRunners.length}
-            </span>
+          <div className="flex items-center gap-4">
             {totalRunning > 0 && (
-              <span className="flex items-center gap-1 text-primary">
-                <Zap className="w-3 h-3" />
-                {totalRunning}
-              </span>
+              <div className="session-chip border-primary/30">
+                <div className="status-dot status-dot-primary" />
+                <span className="text-xs font-medium text-primary">{totalRunning} active</span>
+              </div>
             )}
             {totalQueued > 0 && (
-              <span className="flex items-center gap-1">
-                <Clock className="w-3 h-3" />
-                {totalQueued}
-              </span>
+              <div className="session-chip">
+                <Clock className="w-3.5 h-3.5 text-muted-foreground" />
+                <span className="text-xs text-muted-foreground">{totalQueued} queued</span>
+              </div>
             )}
-            <span className="flex items-center gap-1 text-emerald-500">
-              <CheckCircle2 className="w-3 h-3" />
-              {totalCompleted}
-            </span>
+            <div className="session-chip border-success/20">
+              <CheckCircle2 className="w-3.5 h-3.5 text-success" />
+              <span className="text-xs text-success font-medium">{totalCompleted}</span>
+            </div>
             {totalFailed > 0 && (
-              <span className="flex items-center gap-1 text-destructive">
-                <XCircle className="w-3 h-3" />
-                {totalFailed}
-              </span>
+              <div className="session-chip border-destructive/20">
+                <XCircle className="w-3.5 h-3.5 text-destructive" />
+                <span className="text-xs text-destructive">{totalFailed}</span>
+              </div>
             )}
           </div>
         </div>
@@ -971,7 +967,7 @@ const Operator = () => {
       <div className="flex-1 flex min-h-0 overflow-hidden">
         {/* Session Panel (collapsible) */}
         {showSessionPanel && (
-          <div className="w-72 border-r border-border/30 bg-card/20 p-3 flex-shrink-0 overflow-y-auto">
+          <div className="w-80 glass-panel border-t-0 border-l-0 p-4 flex-shrink-0 overflow-y-auto scrollbar-thin">
             <MultiSessionManager
               onSessionSelect={(sessionId) => requestScreenshot(sessionId)}
               onScreenshotRequest={(sessionId, imageUrl, profileName) => {
@@ -990,74 +986,74 @@ const Operator = () => {
 
         {/* Chat Area */}
         <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
-          <ScrollArea className="flex-1" ref={scrollRef}>
-            <div className="p-3 space-y-3 max-w-full overflow-hidden">
+          <ScrollArea className="flex-1 scrollbar-thin" ref={scrollRef}>
+            <div className="p-4 space-y-4 max-w-3xl mx-auto">
 
-            {/* Active Tasks as compact items */}
+            {/* Active Tasks as glass cards */}
             {activeTasks.length > 0 && (
-              <div className="space-y-2">
-                <span className="text-[10px] uppercase tracking-wider text-muted-foreground/60 font-medium">
-                  Tasks
+              <div className="space-y-3">
+                <span className="text-xs uppercase tracking-wider text-muted-foreground/60 font-semibold flex items-center gap-2">
+                  <Activity className="w-3.5 h-3.5" />
+                  Active Tasks
                 </span>
                 {activeTasks.map((task) => (
-                  <div key={task.id} className="flex items-center gap-1.5 px-2 py-1.5 rounded-lg bg-card/60 border border-border/40 min-w-0">
-                    {task.status === 'paused' ? (
-                      <Pause className="w-3 h-3 text-amber-500 flex-shrink-0" />
-                    ) : task.sessionsRunning > 0 ? (
-                      <Activity className="w-3 h-3 text-primary animate-pulse flex-shrink-0" />
-                    ) : (
-                      <Clock className="w-3 h-3 text-muted-foreground flex-shrink-0" />
-                    )}
-                    <span className="text-[10px] font-medium truncate flex-1 min-w-0">{task.name}</span>
-                    <div className="flex items-center gap-1 text-[9px] text-muted-foreground flex-shrink-0">
-                      <span>{task.progress}%</span>
-                      <span className="text-emerald-500">{task.sessionsCompleted}</span>
-                      <span>/</span>
-                      <span>{task.sessionsTotal}</span>
-                    </div>
-                    <div className="flex items-center flex-shrink-0">
-                      {/* Pause/Resume */}
+                  <div key={task.id} className="task-card task-card-active">
+                    <div className="flex items-center gap-3">
                       {task.status === 'paused' ? (
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => handleResumeTask(task.id)}
-                          className="h-5 w-5 p-0 hover:bg-emerald-500/10 hover:text-emerald-500"
-                          title="Resume"
-                        >
-                          <Play className="w-2.5 h-2.5" />
-                        </Button>
+                        <div className="w-8 h-8 rounded-lg bg-warning/20 flex items-center justify-center">
+                          <Pause className="w-4 h-4 text-warning" />
+                        </div>
+                      ) : task.sessionsRunning > 0 ? (
+                        <div className="w-8 h-8 rounded-lg bg-primary/20 flex items-center justify-center glow-primary">
+                          <Activity className="w-4 h-4 text-primary animate-pulse" />
+                        </div>
                       ) : (
+                        <div className="w-8 h-8 rounded-lg bg-muted/50 flex items-center justify-center">
+                          <Clock className="w-4 h-4 text-muted-foreground" />
+                        </div>
+                      )}
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium truncate">{task.name}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {task.sessionsCompleted}/{task.sessionsTotal} completed
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        {task.status === 'paused' ? (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => handleResumeTask(task.id)}
+                            className="h-7 w-7 p-0 rounded-lg hover:bg-success/20 hover:text-success"
+                          >
+                            <Play className="w-3.5 h-3.5" />
+                          </Button>
+                        ) : (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => handlePauseTask(task.id)}
+                            className="h-7 w-7 p-0 rounded-lg hover:bg-warning/20 hover:text-warning"
+                          >
+                            <Pause className="w-3.5 h-3.5" />
+                          </Button>
+                        )}
                         <Button
                           size="sm"
                           variant="ghost"
-                          onClick={() => handlePauseTask(task.id)}
-                          className="h-5 w-5 p-0 hover:bg-amber-500/10 hover:text-amber-500"
-                          title="Pause"
+                          onClick={() => handleStop(task.id)}
+                          className="h-7 w-7 p-0 rounded-lg hover:bg-destructive/20 hover:text-destructive"
                         >
-                          <Pause className="w-2.5 h-2.5" />
+                          <Square className="w-3.5 h-3.5" />
                         </Button>
-                      )}
-                      {/* Stop */}
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => handleStop(task.id)}
-                        className="h-5 w-5 p-0 hover:bg-destructive/10 hover:text-destructive"
-                        title="Stop"
-                      >
-                        <Square className="w-2.5 h-2.5" />
-                      </Button>
-                      {/* Delete */}
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => handleDeleteTask(task.id)}
-                        className="h-5 w-5 p-0 hover:bg-destructive/10 hover:text-destructive"
-                        title="Delete"
-                      >
-                        <Trash2 className="w-2.5 h-2.5" />
-                      </Button>
+                      </div>
+                    </div>
+                    {/* Progress bar */}
+                    <div className="progress-glass">
+                      <div 
+                        className="progress-glass-fill" 
+                        style={{ width: `${task.progress}%` }}
+                      />
                     </div>
                   </div>
                 ))}
@@ -1069,72 +1065,73 @@ const Operator = () => {
               <div className="space-y-2">
                 <button
                   onClick={() => setShowTaskHistory(!showTaskHistory)}
-                  className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-muted-foreground/60 font-medium hover:text-muted-foreground transition-colors"
+                  className="flex items-center gap-2 text-xs uppercase tracking-wider text-muted-foreground/60 font-semibold hover:text-muted-foreground transition-colors"
                 >
-                  <History className="w-3 h-3" />
-                  Task History ({allTasks.length})
-                  <ChevronDown className={`w-3 h-3 transition-transform ${showTaskHistory ? 'rotate-180' : ''}`} />
+                  <History className="w-3.5 h-3.5" />
+                  History ({allTasks.length})
+                  <ChevronDown className={`w-3.5 h-3.5 transition-transform ${showTaskHistory ? 'rotate-180' : ''}`} />
                 </button>
                 
                 {showTaskHistory && (
-                  <div className="space-y-1 max-h-[300px] overflow-y-auto">
+                  <div className="space-y-2 max-h-[300px] overflow-y-auto scrollbar-thin">
                     {allTasks.map((task) => (
                       <div 
                         key={task.id} 
-                        className={`flex items-center gap-1.5 px-2 py-1.5 rounded-lg border min-w-0 ${
+                        className={`glass-card p-3 flex items-center gap-3 ${
                           task.status === 'completed' || task.progress === 100 
-                            ? 'bg-emerald-500/5 border-emerald-500/20' 
+                            ? 'border-success/30' 
                             : task.status === 'cancelled' || task.status === 'failed'
-                            ? 'bg-destructive/5 border-destructive/20'
-                            : 'bg-card/40 border-border/30'
+                            ? 'border-destructive/30'
+                            : ''
                         }`}
                       >
                         {/* Status Icon */}
-                        {task.status === 'completed' || task.progress === 100 ? (
-                          <CheckCircle2 className="w-3 h-3 text-emerald-500 flex-shrink-0" />
-                        ) : task.status === 'cancelled' ? (
-                          <XCircle className="w-3 h-3 text-destructive flex-shrink-0" />
-                        ) : task.status === 'failed' ? (
-                          <XCircle className="w-3 h-3 text-destructive flex-shrink-0" />
-                        ) : task.status === 'active' || task.status === 'pending' ? (
-                          <Activity className="w-3 h-3 text-primary flex-shrink-0" />
-                        ) : (
-                          <Clock className="w-3 h-3 text-muted-foreground flex-shrink-0" />
-                        )}
-                        
-                        {/* Task Name */}
-                        <span className="text-[10px] font-medium truncate flex-1 min-w-0">{task.name}</span>
-                        
-                        {/* Stats */}
-                        <div className="flex items-center gap-1 text-[9px] text-muted-foreground flex-shrink-0">
-                          <span className="text-emerald-500">{task.sessionsCompleted}</span>
-                          {task.sessionsFailed > 0 && (
-                            <span className="text-destructive">/{task.sessionsFailed}</span>
+                        <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${
+                          task.status === 'completed' || task.progress === 100 
+                            ? 'bg-success/20' 
+                            : task.status === 'cancelled' || task.status === 'failed'
+                            ? 'bg-destructive/20'
+                            : 'bg-muted/50'
+                        }`}>
+                          {task.status === 'completed' || task.progress === 100 ? (
+                            <CheckCircle2 className="w-4 h-4 text-success" />
+                          ) : task.status === 'cancelled' || task.status === 'failed' ? (
+                            <XCircle className="w-4 h-4 text-destructive" />
+                          ) : (
+                            <Clock className="w-4 h-4 text-muted-foreground" />
                           )}
-                          <span>/{task.sessionsTotal}</span>
+                        </div>
+                        
+                        {/* Task Info */}
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium truncate">{task.name}</p>
+                          <p className="text-xs text-muted-foreground">
+                            {task.sessionsCompleted}/{task.sessionsTotal} completed
+                            {task.sessionsFailed > 0 && (
+                              <span className="text-destructive ml-1">• {task.sessionsFailed} failed</span>
+                            )}
+                          </p>
                         </div>
                         
                         {/* Actions */}
-                        <div className="flex items-center flex-shrink-0">
-                          {/* Restart */}
+                        <div className="flex items-center gap-1">
                           <Button
                             size="sm"
                             variant="ghost"
                             onClick={() => handleRestartTask(task.id)}
-                            className="h-5 w-5 p-0 hover:bg-primary/10 hover:text-primary"
+                            className="h-7 w-7 p-0 rounded-lg hover:bg-primary/20 hover:text-primary"
                             title="Restart"
                           >
-                            <RotateCw className="w-2.5 h-2.5" />
+                            <RotateCw className="w-3.5 h-3.5" />
                           </Button>
-                          {/* Delete */}
                           <Button
                             size="sm"
                             variant="ghost"
                             onClick={() => handleDeleteTask(task.id)}
-                            className="h-5 w-5 p-0 hover:bg-destructive/10 hover:text-destructive"
+                            className="h-7 w-7 p-0 rounded-lg hover:bg-destructive/20 hover:text-destructive"
                             title="Delete"
                           >
-                            <Trash2 className="w-2.5 h-2.5" />
+                            <Trash2 className="w-3.5 h-3.5" />
                           </Button>
                         </div>
                       </div>
@@ -1146,14 +1143,14 @@ const Operator = () => {
 
             {/* Chat Messages */}
             {chatMessages.map((msg) => (
-              <div key={msg.id} className="space-y-2">
+              <div key={msg.id} className="animate-fade-in">
                 {/* Planning message - shows TaskPlanner */}
                 {msg.type === 'planning' && msg.userCommand && (
-                  <div className="flex gap-2 justify-start">
-                    <div className="w-6 h-6 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
-                      <Brain className="w-3 h-3 text-primary" />
+                  <div className="flex gap-3 justify-start">
+                    <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-primary/20 to-accent/20 flex items-center justify-center flex-shrink-0">
+                      <Brain className="w-4 h-4 text-primary" />
                     </div>
-                    <div className="max-w-[90%]">
+                    <div className="flex-1 max-w-[90%]">
                       <TaskPlanner
                         userCommand={msg.userCommand}
                         onApprove={handlePlanApproved}
@@ -1165,17 +1162,16 @@ const Operator = () => {
 
                 {/* Supervisor message - shows TaskSupervisor */}
                 {msg.type === 'supervisor' && msg.taskId && (
-                  <div className="flex gap-2 justify-start">
-                    <div className="w-6 h-6 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
-                      <Brain className="w-3 h-3 text-primary" />
+                  <div className="flex gap-3 justify-start">
+                    <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-primary/20 to-accent/20 flex items-center justify-center flex-shrink-0">
+                      <Brain className="w-4 h-4 text-primary" />
                     </div>
-                    <div className="max-w-[90%] w-full">
+                    <div className="flex-1">
                       <TaskSupervisor
                         taskId={msg.taskId}
                         taskName={msg.content}
                         onComplete={(success) => handleTaskComplete(msg.taskId!, success)}
                         onRequestInput={async (question) => {
-                          // This could be enhanced with a modal or inline input
                           return window.prompt(question) || '';
                         }}
                       />
@@ -1183,13 +1179,13 @@ const Operator = () => {
                   </div>
                 )}
 
-                {/* Action screenshot messages - compact visual feedback */}
+                {/* Action screenshot messages */}
                 {msg.type === 'action_screenshot' && msg.imageUrl && (
-                  <div className="flex gap-2 justify-start">
-                    <div className="w-6 h-6 rounded-full bg-emerald-500/10 flex items-center justify-center flex-shrink-0">
-                      <CheckCircle2 className="w-3 h-3 text-emerald-500" />
+                  <div className="flex gap-3 justify-start">
+                    <div className="w-8 h-8 rounded-xl bg-success/20 flex items-center justify-center flex-shrink-0">
+                      <CheckCircle2 className="w-4 h-4 text-success" />
                     </div>
-                    <div className="max-w-sm">
+                    <div className="max-w-md">
                       <ChatScreenshot
                         imageUrl={msg.imageUrl}
                         profileName={msg.profileName}
@@ -1202,64 +1198,68 @@ const Operator = () => {
 
                 {/* Regular messages */}
                 {msg.type !== 'planning' && msg.type !== 'supervisor' && msg.type !== 'action_screenshot' && (
-                  <div className={`flex gap-2 ${msg.type === 'user' ? 'justify-end' : 'justify-start'}`}>
+                  <div className={`flex gap-3 ${msg.type === 'user' ? 'justify-end' : 'justify-start'}`}>
                     {msg.type !== 'user' && (
-                      <div className={`w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 ${
-                        msg.type === 'error' ? 'bg-destructive/10' :
-                        msg.type === 'success' ? 'bg-emerald-500/10' :
-                        msg.type === 'screenshot' ? 'bg-primary/10' :
-                        msg.type === 'ai' ? 'bg-primary/10' :
-                        'bg-muted/50'
+                      <div className={`w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0 ${
+                        msg.type === 'error' ? 'bg-destructive/20' :
+                        msg.type === 'success' ? 'bg-success/20' :
+                        msg.type === 'screenshot' ? 'bg-primary/20' :
+                        msg.type === 'ai' ? 'bg-gradient-to-br from-primary/20 to-accent/20' :
+                        'bg-muted/30'
                       }`}>
-                        {msg.type === 'error' ? <XCircle className="w-3 h-3 text-destructive" /> :
-                         msg.type === 'success' ? <CheckCircle2 className="w-3 h-3 text-emerald-500" /> :
-                         msg.type === 'screenshot' ? <Image className="w-3 h-3 text-primary" /> :
-                         msg.type === 'ai' ? <Bot className="w-3 h-3 text-primary" /> :
-                         <Sparkles className="w-3 h-3 text-muted-foreground" />}
+                        {msg.type === 'error' ? <XCircle className="w-4 h-4 text-destructive" /> :
+                         msg.type === 'success' ? <CheckCircle2 className="w-4 h-4 text-success" /> :
+                         msg.type === 'screenshot' ? <Image className="w-4 h-4 text-primary" /> :
+                         msg.type === 'ai' ? <Bot className="w-4 h-4 text-primary" /> :
+                         <Sparkles className="w-4 h-4 text-muted-foreground" />}
                       </div>
                     )}
                     
-                    <div className={`max-w-[85%] ${msg.type === 'user' ? 'order-first' : ''}`}>
-                      <div className={`px-3 py-2 rounded-2xl text-sm ${
-                        msg.type === 'user' ? 'bg-primary text-primary-foreground rounded-br-md' :
-                        msg.type === 'error' ? 'bg-destructive/10 text-destructive border border-destructive/20 rounded-bl-md' :
-                        msg.type === 'success' ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 rounded-bl-md' :
-                        msg.type === 'ai' ? 'bg-primary/5 border border-primary/20 rounded-bl-md' :
-                        'bg-card border border-border/50 rounded-bl-md'
+                    <div className={`max-w-[80%] ${msg.type === 'user' ? 'order-first' : ''}`}>
+                      <div className={`px-4 py-3 text-sm ${
+                        msg.type === 'user' 
+                          ? 'chat-bubble-user' 
+                          : msg.type === 'error' 
+                          ? 'chat-bubble border-destructive/30 text-destructive' 
+                          : msg.type === 'success' 
+                          ? 'chat-bubble border-success/30 text-success' 
+                          : msg.type === 'ai' 
+                          ? 'chat-bubble-ai' 
+                          : 'chat-bubble'
                       }`}>
                         {msg.content}
                       </div>
                       
                       {msg.imageUrl && (
-                        <div className="mt-2 rounded-lg overflow-hidden border border-border/50 max-w-[300px]">
+                        <div className="mt-3 glass-card overflow-hidden max-w-[320px]">
                           <img 
                             src={msg.imageUrl} 
                             alt="Session screenshot" 
                             className="w-full h-auto"
                             loading="lazy"
                           />
-                          <div className="p-2 bg-card/80 flex items-center justify-between text-[10px] text-muted-foreground">
+                          <div className="p-3 flex items-center justify-between text-xs text-muted-foreground">
                             <span>Session: {msg.sessionId?.slice(0, 8)}</span>
                             <a 
                               href={msg.imageUrl} 
                               target="_blank" 
                               rel="noopener noreferrer"
-                              className="hover:text-primary"
+                              className="hover:text-primary transition-colors"
                             >
-                              <ExternalLink className="w-3 h-3" />
+                              <ExternalLink className="w-3.5 h-3.5" />
                             </a>
                           </div>
                         </div>
                       )}
                       
-                      <span className="text-[9px] text-muted-foreground/50 px-1 mt-0.5 block">
+                      <span className="text-[10px] text-muted-foreground/50 px-1 mt-1 block">
                         {msg.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                       </span>
                     </div>
                     
                     {msg.type === 'user' && (
-                      <div className="w-6 h-6 rounded-full bg-primary/20 flex items-center justify-center flex-shrink-0">
-                        <User className="w-3 h-3 text-primary" />
+                      <div className="w-8 h-8 rounded-xl bg-primary/30 flex items-center justify-center flex-shrink-0">
+                        <User className="w-4 h-4 text-primary" />
                       </div>
                     )}
                   </div>
@@ -1269,67 +1269,77 @@ const Operator = () => {
 
             {/* Empty state */}
             {chatMessages.length === 0 && activeTasks.length === 0 && (
-              <div className="flex flex-col items-center justify-center py-12 text-center">
-                <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center mb-3">
-                  <Sparkles className="w-5 h-5 text-primary" />
+              <div className="flex flex-col items-center justify-center py-20 text-center">
+                <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-primary/20 via-primary/10 to-accent/20 flex items-center justify-center mb-6 animate-float glow-primary">
+                  <Sparkles className="w-8 h-8 text-primary" />
                 </div>
-                <p className="text-sm text-muted-foreground">Describe what you need</p>
-                <p className="text-xs text-muted-foreground/50 mt-1">Example: Play Spotify track with 5 profiles</p>
+                <h2 className="text-lg font-semibold text-foreground mb-2">Что нужно сделать?</h2>
+                <p className="text-sm text-muted-foreground max-w-sm">
+                  Опишите задачу на естественном языке. AI поймёт и выполнит.
+                </p>
+                <div className="flex flex-wrap gap-2 mt-6 justify-center">
+                  <span className="session-chip text-xs">Открой Google</span>
+                  <span className="session-chip text-xs">Воспроизведи трек на Spotify</span>
+                  <span className="session-chip text-xs">Сделай скриншот YouTube</span>
+                </div>
               </div>
             )}
           </div>
         </ScrollArea>
 
-        {/* Compact Input */}
-        <div className="flex-shrink-0 border-t border-border/40 bg-background p-2">
-          <div className="flex items-end gap-2">
-            <Textarea
-              value={command}
-              onChange={(e) => setCommand(e.target.value)}
-              placeholder="What needs to be done?"
-              className="min-h-[40px] max-h-[120px] resize-none border-border/50 bg-card/50 text-sm py-2.5 px-3 rounded-xl"
-              disabled={isProcessing}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) handleSubmit();
-              }}
-              rows={1}
-            />
-            <Button 
-              onClick={handleSubmit} 
-              disabled={isProcessing || !command.trim()}
-              size="sm"
-              className="h-10 w-10 rounded-xl p-0 flex-shrink-0"
-            >
-              {isProcessing ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
-              ) : (
-                <Send className="w-4 h-4" />
-              )}
-            </Button>
-          </div>
-          <div className="flex items-center justify-between mt-1.5 px-1">
-            <span className="text-[9px] text-muted-foreground/50">⌘+Enter to send</span>
-            <div className="flex items-center gap-1">
-              {chatMessages.length > 0 && (
+        {/* Input Area - glassmorphism */}
+        <div className="flex-shrink-0 glass-panel border-t-0 border-x-0 p-4">
+          <div className="max-w-3xl mx-auto">
+            <div className="flex items-end gap-3">
+              <div className="flex-1 glass-input rounded-2xl overflow-hidden">
+                <Textarea
+                  value={command}
+                  onChange={(e) => setCommand(e.target.value)}
+                  placeholder="Опишите, что нужно сделать..."
+                  className="min-h-[48px] max-h-[150px] resize-none border-0 bg-transparent text-sm py-3 px-4 focus:ring-0 focus-visible:ring-0"
+                  disabled={isProcessing}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) handleSubmit();
+                  }}
+                  rows={1}
+                />
+              </div>
+              <Button 
+                onClick={handleSubmit} 
+                disabled={isProcessing || !command.trim()}
+                className="h-12 w-12 rounded-2xl p-0 flex-shrink-0 btn-gradient"
+              >
+                {isProcessing ? (
+                  <Loader2 className="w-5 h-5 animate-spin" />
+                ) : (
+                  <Send className="w-5 h-5" />
+                )}
+              </Button>
+            </div>
+            <div className="flex items-center justify-between mt-2 px-2">
+              <span className="text-xs text-muted-foreground/50">⌘+Enter чтобы отправить</span>
+              <div className="flex items-center gap-2">
+                {chatMessages.length > 0 && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={clearCurrentSession}
+                    className="h-6 text-xs text-muted-foreground/60 hover:text-destructive px-2 rounded-lg"
+                  >
+                    <Trash2 className="w-3 h-3 mr-1" />
+                    Очистить
+                  </Button>
+                )}
                 <Button
                   variant="ghost"
                   size="sm"
-                  onClick={clearCurrentSession}
-                  className="h-5 text-[9px] text-muted-foreground/50 hover:text-destructive px-1"
+                  onClick={() => { refetchTasks(); refetchSessions(); }}
+                  className="h-6 text-xs text-muted-foreground/60 hover:text-foreground px-2 rounded-lg"
                 >
-                  <Trash2 className="w-2.5 h-2.5 mr-1" />
-                  Clear
+                  <RotateCw className="w-3 h-3 mr-1" />
+                  Обновить
                 </Button>
-              )}
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => { refetchTasks(); refetchSessions(); }}
-                className="h-5 text-[9px] text-muted-foreground/50 hover:text-muted-foreground px-1"
-              >
-                <RotateCw className="w-2.5 h-2.5 mr-1" />
-                Refresh
-              </Button>
+              </div>
             </div>
           </div>
         </div>
