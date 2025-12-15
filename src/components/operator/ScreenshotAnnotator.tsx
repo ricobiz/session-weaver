@@ -73,7 +73,7 @@ export function ScreenshotAnnotator({
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="max-w-[95vw] max-h-[95vh] w-full h-full p-0 gap-0 bg-background/95 backdrop-blur-xl border-border/50">
+      <DialogContent className="max-w-[95vw] w-[95vw] max-h-[90vh] h-auto p-0 gap-0 bg-background/95 backdrop-blur-xl border-border/50 overflow-hidden flex flex-col">
         {/* Header */}
         <div className="flex items-center justify-between p-3 border-b border-border/30">
           <div className="flex items-center gap-2">
@@ -105,17 +105,17 @@ export function ScreenshotAnnotator({
         </div>
 
         {/* Image Area */}
-        <div className="flex-1 overflow-auto p-4 min-h-0">
+        <div className="flex-1 overflow-auto p-4 min-h-0 flex items-center justify-center">
           <div 
             ref={imageRef}
-            className="relative inline-block cursor-crosshair mx-auto"
+            className="relative cursor-crosshair"
             onClick={handleImageClick}
-            style={{ transform: `scale(${zoom})`, transformOrigin: 'top left' }}
+            style={{ transform: `scale(${zoom})`, transformOrigin: 'center center' }}
           >
             <img 
               src={imageUrl} 
               alt="Screenshot" 
-              className="max-w-full rounded-lg shadow-lg"
+              className="max-w-full max-h-[60vh] rounded-lg shadow-lg object-contain"
               draggable={false}
             />
             
