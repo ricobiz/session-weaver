@@ -236,10 +236,10 @@ const Index = () => {
   }
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-screen bg-background overflow-x-hidden">
       <Header />
       
-      <main className="container mx-auto px-4 py-6">
+      <main className="container mx-auto px-4 py-6 overflow-hidden">
         {/* System Setup Banner - Shows when no runners detected */}
         {runners.length === 0 && (
           <div className="mb-6 p-4 rounded-lg border-2 border-dashed border-orange-500/50 bg-orange-500/5">
@@ -309,9 +309,9 @@ const Index = () => {
         </div>
 
         {/* Main Content Grid */}
-        <div className="grid lg:grid-cols-12 gap-6">
+        <div className="grid lg:grid-cols-12 gap-6 overflow-hidden">
           {/* Left Panel - Task Builder & Task List */}
-          <div className="lg:col-span-4 space-y-4">
+          <div className="lg:col-span-4 space-y-4 overflow-hidden">
             <Tabs defaultValue="tasks" className="w-full">
               <TabsList className="w-full bg-muted/50">
                 <TabsTrigger value="tasks" className="flex-1 gap-1.5">
@@ -423,7 +423,7 @@ const Index = () => {
           </div>
 
           {/* Center Panel - Scenario Preview / Details */}
-          <div className="lg:col-span-4 space-y-4">
+          <div className="lg:col-span-4 space-y-4 overflow-hidden">
             <div className="flex items-center justify-between mb-2">
               <div className="flex items-center gap-2 text-sm font-medium">
                 <FileCode className="w-4 h-4 text-primary" />
@@ -502,7 +502,7 @@ const Index = () => {
           </div>
 
           {/* Right Panel - Live View / Logs / Metrics / AI */}
-          <div className="lg:col-span-4 space-y-4">
+          <div className="lg:col-span-4 space-y-4 overflow-hidden">
             <div className="flex items-center justify-between mb-2">
               <div className="flex items-center gap-2 text-sm font-medium">
                 {rightPanelView === 'setup' && <Zap className="w-4 h-4 text-primary" />}
