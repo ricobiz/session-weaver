@@ -136,36 +136,48 @@ function getStealthScript(fingerprint?: Fingerprint): string {
     }
     
     // ========== PHANTOM PROPERTIES (COMPREHENSIVE) ==========
-    // Delete all known PhantomJS properties
+    // Sannysoft PHANTOM_PROPERTIES checks specific window properties
+    // The test looks for: callPhantom, _phantom, phantom, __phantomas
+    // and also checks if they're enumerable
+    
     const phantomProps = [
       'callPhantom', '_phantom', 'phantom', '__phantomas',
-      'Buffer', 'emit', 'spawn', 'webdriver'
+      'Buffer', 'emit', 'spawn', 'webdriver',
+      // Node.js indicators that might leak
+      'process', 'require', 'module', 'exports', '__dirname', '__filename'
     ];
     
     for (const prop of phantomProps) {
+      try { delete window[prop]; } catch(e) {}
       try {
-        if (window[prop] !== undefined) {
-          delete window[prop];
-        }
+        Object.defineProperty(window, prop, {
+          get: () => undefined,
+          set: () => {},
+          configurable: false,
+          enumerable: false
+        });
       } catch(e) {}
     }
     
-    // Override window.callPhantom specifically
-    Object.defineProperty(window, 'callPhantom', {
-      get: () => undefined,
-      set: () => {},
-      configurable: false
-    });
-    Object.defineProperty(window, '_phantom', {
-      get: () => undefined,
-      set: () => {},
-      configurable: false
-    });
-    Object.defineProperty(window, 'phantom', {
-      get: () => undefined,
-      set: () => {},
-      configurable: false
-    });
+    // Make sure phantom properties don't appear in Object.keys or for..in
+    const origKeys = Object.keys;
+    Object.keys = function(obj) {
+      const keys = origKeys.call(this, obj);
+      if (obj === window) {
+        return keys.filter(k => !phantomProps.includes(k) && !/^(\\$cdc_|\\$chrome_|\\$wdc_)/.test(k));
+      }
+      return keys;
+    };
+    
+    // Also override Object.getOwnPropertyNames for window
+    const origGetOwnPropertyNames = Object.getOwnPropertyNames;
+    Object.getOwnPropertyNames = function(obj) {
+      const names = origGetOwnPropertyNames.call(this, obj);
+      if (obj === window) {
+        return names.filter(k => !phantomProps.includes(k) && !/^(\\$cdc_|\\$chrome_|\\$wdc_)/.test(k));
+      }
+      return names;
+    };
     
     // ========== SELENIUM DRIVER DETECTION ==========
     // Remove all Selenium-related document properties
