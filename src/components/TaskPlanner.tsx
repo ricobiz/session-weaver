@@ -135,49 +135,108 @@ export function TaskPlanner({ userCommand, onApprove, onCancel, onEdit }: TaskPl
   const parseUserIntent = (input: string) => {
     const lower = input.toLowerCase();
     
+    // Common site name to URL mappings
+    const siteUrls: Record<string, string> = {
+      'google': 'https://www.google.com',
+      'youtube': 'https://www.youtube.com',
+      'spotify': 'https://www.spotify.com',
+      'soundcloud': 'https://www.soundcloud.com',
+      'tiktok': 'https://www.tiktok.com',
+      'instagram': 'https://www.instagram.com',
+      'twitter': 'https://twitter.com',
+      'x.com': 'https://x.com',
+      'facebook': 'https://www.facebook.com',
+      'vk': 'https://vk.com',
+      'yandex': 'https://ya.ru',
+      'яндекс': 'https://ya.ru',
+      'гугл': 'https://www.google.com',
+      'ютуб': 'https://www.youtube.com',
+      'вконтакте': 'https://vk.com',
+    };
+    
     // Detect platform
     let platform = 'generic';
     if (lower.includes('spotify')) platform = 'spotify';
-    else if (lower.includes('youtube')) platform = 'youtube';
+    else if (lower.includes('youtube') || lower.includes('ютуб')) platform = 'youtube';
     else if (lower.includes('soundcloud')) platform = 'soundcloud';
     else if (lower.includes('tiktok')) platform = 'tiktok';
     else if (lower.includes('instagram')) platform = 'instagram';
     else if (lower.includes('twitter') || lower.includes('x.com')) platform = 'twitter';
+    else if (lower.includes('google') || lower.includes('гугл')) platform = 'google';
+    else if (lower.includes('vk') || lower.includes('вконтакте')) platform = 'vk';
 
     // Detect goal
     let goal = 'play';
-    if (lower.includes('like')) goal = 'like';
-    else if (lower.includes('comment')) goal = 'comment';
-    else if (lower.includes('follow') || lower.includes('subscribe')) goal = 'follow';
-    else if (lower.includes('play') || lower.includes('listen') || lower.includes('watch') || lower.includes('view')) goal = 'play';
-    else if (lower.includes('share')) goal = 'share';
+    if (lower.includes('скриншот') || lower.includes('screenshot')) goal = 'screenshot';
+    else if (lower.includes('like') || lower.includes('лайк')) goal = 'like';
+    else if (lower.includes('comment') || lower.includes('комментар')) goal = 'comment';
+    else if (lower.includes('follow') || lower.includes('subscribe') || lower.includes('подпис')) goal = 'follow';
+    else if (lower.includes('play') || lower.includes('listen') || lower.includes('watch') || lower.includes('view') || lower.includes('смотр') || lower.includes('слуша')) goal = 'play';
+    else if (lower.includes('share') || lower.includes('поделиться')) goal = 'share';
+    else if (lower.includes('перейд') || lower.includes('открой') || lower.includes('зайди') || lower.includes('go to') || lower.includes('open') || lower.includes('visit')) goal = 'navigate';
 
     // Detect entry method and target
     let entry_method: 'url' | 'search' = 'search';
     let target = '';
     
+    // First check for explicit URLs
     const urlMatch = input.match(/https?:\/\/[^\s]+/);
     if (urlMatch) {
       entry_method = 'url';
       target = urlMatch[0];
     } else {
-      const searchMatch = input.match(/(?:search\s+for|find|look\s+for)\s+["']?([^"']+)["']?/i);
-      const quotedMatch = input.match(/["']([^"']+)["']/);
-      target = searchMatch?.[1] || quotedMatch?.[1] || platform;
+      // Check for site name mentions and convert to URL
+      const sitePattern = /(?:на сайт|на|сайт|перейди на|открой|зайди на|go to|open|visit)\s+([а-яёa-z0-9.-]+)/i;
+      const siteMatch = input.match(sitePattern);
+      
+      if (siteMatch) {
+        const siteName = siteMatch[1].toLowerCase().replace(/[.,!?]/g, '');
+        // Check if it's a known site
+        if (siteUrls[siteName]) {
+          entry_method = 'url';
+          target = siteUrls[siteName];
+        } else if (siteName.includes('.')) {
+          // Looks like a domain
+          entry_method = 'url';
+          target = siteName.startsWith('http') ? siteName : `https://${siteName}`;
+        } else {
+          // Try to match partial names
+          for (const [key, url] of Object.entries(siteUrls)) {
+            if (siteName.includes(key) || key.includes(siteName)) {
+              entry_method = 'url';
+              target = url;
+              break;
+            }
+          }
+        }
+      }
+      
+      // If still no URL, check for search intent
+      if (!target) {
+        const searchMatch = input.match(/(?:search\s+for|find|look\s+for|найди|поиск)\s+["']?([^"']+)["']?/i);
+        const quotedMatch = input.match(/["']([^"']+)["']/);
+        target = searchMatch?.[1] || quotedMatch?.[1] || '';
+        
+        // If no target found, use platform as fallback
+        if (!target && platform !== 'generic') {
+          entry_method = 'url';
+          target = siteUrls[platform] || `https://www.${platform}.com`;
+        }
+      }
     }
 
     // Detect profile count
     let profile_count = 1;
-    const countMatch = input.match(/(\d+)\s*(?:profile|agent|bot|user)/i);
+    const countMatch = input.match(/(\d+)\s*(?:profile|agent|bot|user|профил|агент|бот)/i);
     if (countMatch) {
       profile_count = parseInt(countMatch[1], 10);
-    } else if (lower.includes('all profiles') || lower.includes('all agents')) {
+    } else if (lower.includes('all profiles') || lower.includes('all agents') || lower.includes('все профил') || lower.includes('все агент')) {
       profile_count = -1;
     }
 
     // Detect run count
     let run_count = 1;
-    const runMatch = input.match(/(\d+)\s*(?:time|run|iteration|repeat)/i);
+    const runMatch = input.match(/(\d+)\s*(?:time|run|iteration|repeat|раз)/i);
     const timesMatch = input.match(/(\d+)x\b/i);
     if (runMatch) {
       run_count = parseInt(runMatch[1], 10);
@@ -188,10 +247,10 @@ export function TaskPlanner({ userCommand, onApprove, onCancel, onEdit }: TaskPl
     // Duration hints
     let min_duration = 30;
     let max_duration = 120;
-    const durationMatch = input.match(/(\d+)\s*(?:second|sec|minute|min)/i);
+    const durationMatch = input.match(/(\d+)\s*(?:second|sec|minute|min|секунд|минут)/i);
     if (durationMatch) {
       const val = parseInt(durationMatch[1], 10);
-      if (input.includes('min')) {
+      if (lower.includes('min') || lower.includes('минут')) {
         min_duration = val * 60;
         max_duration = val * 60 + 60;
       } else {
@@ -203,7 +262,9 @@ export function TaskPlanner({ userCommand, onApprove, onCancel, onEdit }: TaskPl
     // Build human summary
     const profileText = profile_count === -1 ? 'all profiles' : `${profile_count} profile${profile_count > 1 ? 's' : ''}`;
     const runText = run_count > 1 ? ` × ${run_count} runs` : '';
-    const human_summary = `${goal.charAt(0).toUpperCase() + goal.slice(1)} on ${platform} via ${entry_method === 'url' ? 'direct link' : 'search'} "${target}" using ${profileText}${runText}`;
+    const actionText = goal === 'screenshot' ? 'Screenshot' : goal === 'navigate' ? 'Navigate to' : goal.charAt(0).toUpperCase() + goal.slice(1);
+    const targetText = entry_method === 'url' ? target : `search "${target}"`;
+    const human_summary = `${actionText} ${platform !== 'generic' ? platform : ''} ${targetText} using ${profileText}${runText}`.trim().replace(/\s+/g, ' ');
 
     return {
       platform,
