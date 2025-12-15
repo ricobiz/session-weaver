@@ -4,7 +4,6 @@ import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Separator } from '@/components/ui/separator';
 import { toast } from '@/hooks/use-toast';
 import { useQuery } from '@tanstack/react-query';
 import { 
@@ -16,7 +15,6 @@ import {
   XCircle,
   Clock,
   Activity,
-  Bot,
   Sparkles,
   WifiOff,
   Server,
@@ -53,6 +51,9 @@ import {
 import { TaskPlanner } from '@/components/TaskPlanner';
 import { TaskSupervisor } from '@/components/TaskSupervisor';
 import { ChatScreenshot } from '@/components/operator/ChatScreenshot';
+import { RunnersPanel } from '@/components/operator/RunnersPanel';
+import { AutomationControls } from '@/components/operator/AutomationControls';
+import logoImage from '@/assets/logo.png';
 import { MultiSessionManager } from '@/components/operator/MultiSessionManager';
 
 interface TaskSummary {
@@ -871,9 +872,7 @@ const Operator = () => {
         <div className="flex items-center justify-between gap-2">
           {/* Left: Logo + Chat selector */}
           <div className="flex items-center gap-2 min-w-0">
-            <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-primary via-primary/80 to-accent flex items-center justify-center flex-shrink-0">
-              <Bot className="w-4 h-4 text-primary-foreground" />
-            </div>
+            <img src={logoImage} alt="Logo" className="w-8 h-8 rounded-xl flex-shrink-0" />
             
             {/* Chat Sessions Dropdown */}
             <DropdownMenu>
@@ -1006,20 +1005,11 @@ const Operator = () => {
       <div className="flex-1 flex min-h-0 overflow-hidden">
         {/* Session Panel (collapsible) */}
         {showSessionPanel && (
-          <div className="w-80 glass-panel border-t-0 border-l-0 p-4 flex-shrink-0 overflow-y-auto scrollbar-thin">
-            <MultiSessionManager
-              onSessionSelect={(sessionId) => requestScreenshot(sessionId)}
-              onScreenshotRequest={(sessionId, imageUrl, profileName) => {
-                addMessage({
-                  type: 'action_screenshot',
-                  content: `Скриншот от ${profileName}`,
-                  sessionId,
-                  imageUrl,
-                  profileName,
-                });
-              }}
-              maxConcurrent={10}
-            />
+          <div className="w-72 glass-panel border-t-0 border-l-0 flex-shrink-0 flex flex-col overflow-hidden">
+            <div className="p-3 border-b border-border/30">
+              <h3 className="text-xs font-semibold text-foreground">Активные потоки</h3>
+            </div>
+            <RunnersPanel />
           </div>
         )}
 
@@ -1249,7 +1239,7 @@ const Operator = () => {
                         {msg.type === 'error' ? <XCircle className="w-4 h-4 text-destructive" /> :
                          msg.type === 'success' ? <CheckCircle2 className="w-4 h-4 text-success" /> :
                          msg.type === 'screenshot' ? <Image className="w-4 h-4 text-primary" /> :
-                         msg.type === 'ai' ? <Bot className="w-4 h-4 text-primary" /> :
+                         msg.type === 'ai' ? <Brain className="w-4 h-4 text-primary" /> :
                          <Sparkles className="w-4 h-4 text-muted-foreground" />}
                       </div>
                     )}
@@ -1407,6 +1397,17 @@ const Operator = () => {
                 )}
               </Button>
             </div>
+            
+            {/* Automation Controls */}
+            <AutomationControls 
+              hasActiveTasks={totalRunning > 0 || totalQueued > 0}
+              isProcessing={isProcessing}
+              onRequestScreenshot={() => {
+                // Request screenshot from first running session
+                const runningSession = activeSessions.find(s => s.status === 'running');
+                if (runningSession) requestScreenshot(runningSession.id);
+              }}
+            />
             
             {/* Bottom Actions */}
             <div className="flex items-center justify-between px-1">
