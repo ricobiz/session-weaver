@@ -110,6 +110,7 @@ interface ChatSession {
   createdAt: Date;
   messages: ChatMessage[];
   conversation: ConversationMessage[];
+  taskIds: string[]; // Task IDs created in this chat
 }
 
 const STORAGE_KEY_MODEL = 'operator-selected-model';
@@ -153,6 +154,7 @@ const Operator = () => {
   const currentSession = chatSessions.find(s => s.id === activeSessionId);
   const chatMessages = currentSession?.messages || [];
   const conversationHistory = currentSession?.conversation || [];
+  const currentChatTaskIds = currentSession?.taskIds || [];
 
   // Persist sessions
   useEffect(() => {
@@ -184,10 +186,21 @@ const Operator = () => {
       createdAt: new Date(),
       messages: [],
       conversation: [],
+      taskIds: [],
     };
     setChatSessions(prev => [newSession, ...prev]);
     setActiveSessionId(newSession.id);
     return newSession;
+  };
+  
+  // Add task to current chat
+  const addTaskToCurrentChat = (taskId: string) => {
+    if (!activeSessionId) return;
+    setChatSessions(prev => prev.map(s => 
+      s.id === activeSessionId 
+        ? { ...s, taskIds: [...(s.taskIds || []), taskId] }
+        : s
+    ));
   };
 
   // Switch session
@@ -358,7 +371,14 @@ const Operator = () => {
     refetchInterval: 10000,
   });
 
-  // Fetch active sessions
+  // Filter tasks by current chat
+  const filteredActiveTasks = activeTasks.filter(task => 
+    currentChatTaskIds.length === 0 ? false : currentChatTaskIds.includes(task.id)
+  );
+  const filteredAllTasks = allTasks.filter(task => 
+    currentChatTaskIds.length === 0 ? false : currentChatTaskIds.includes(task.id)
+  );
+
   const { data: activeSessions = [], refetch: refetchSessions } = useQuery({
     queryKey: ['operator-sessions'],
     queryFn: async () => {
@@ -535,10 +555,14 @@ const Operator = () => {
   };
 
   const handlePlanApproved = async (taskId: string, _plan: any) => {
-    // Remove planning message
+    // Remove planning message and add task to current chat
     setChatSessions(prev => prev.map(s => 
       s.id === activeSessionId 
-        ? { ...s, messages: s.messages.filter(m => m.type !== 'planning') }
+        ? { 
+            ...s, 
+            messages: s.messages.filter(m => m.type !== 'planning'),
+            taskIds: [...(s.taskIds || []), taskId] // Link task to chat
+          }
         : s
     ));
     
@@ -1037,13 +1061,13 @@ const Operator = () => {
             <div className="p-3 sm:p-4 space-y-3 w-full">
 
             {/* Active Tasks as glass cards */}
-            {activeTasks.length > 0 && (
+            {filteredActiveTasks.length > 0 && (
               <div className="space-y-3">
                 <span className="text-xs uppercase tracking-wider text-muted-foreground/60 font-semibold flex items-center gap-2">
                   <Activity className="w-3.5 h-3.5" />
                   Active Tasks
                 </span>
-                {activeTasks.map((task) => (
+                {filteredActiveTasks.map((task) => (
                   <div key={task.id} className="task-card task-card-active">
                     <div className="flex items-center gap-3">
                       {task.status === 'paused' ? (
@@ -1108,20 +1132,20 @@ const Operator = () => {
             )}
 
             {/* Task History Toggle & List */}
-            {allTasks.length > 0 && (
+            {filteredAllTasks.length > 0 && (
               <div className="space-y-2">
                 <button
                   onClick={() => setShowTaskHistory(!showTaskHistory)}
                   className="flex items-center gap-2 text-xs uppercase tracking-wider text-muted-foreground/60 font-semibold hover:text-muted-foreground transition-colors"
                 >
                   <History className="w-3.5 h-3.5" />
-                  History ({allTasks.length})
+                  History ({filteredAllTasks.length})
                   <ChevronDown className={`w-3.5 h-3.5 transition-transform ${showTaskHistory ? 'rotate-180' : ''}`} />
                 </button>
                 
                 {showTaskHistory && (
                   <div className="space-y-2 max-h-[300px] overflow-y-auto scrollbar-thin">
-                    {allTasks.map((task) => (
+                    {filteredAllTasks.map((task) => (
                       <div 
                         key={task.id} 
                         className={`glass-card p-3 ${
@@ -1316,7 +1340,7 @@ const Operator = () => {
             ))}
 
             {/* Empty state */}
-            {chatMessages.length === 0 && activeTasks.length === 0 && (
+            {chatMessages.length === 0 && filteredActiveTasks.length === 0 && (
               <div className="flex flex-col items-center justify-center py-20 text-center">
                 <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-primary/20 via-primary/10 to-accent/20 flex items-center justify-center mb-6 animate-float glow-primary">
                   <Sparkles className="w-8 h-8 text-primary" />
