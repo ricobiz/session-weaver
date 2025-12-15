@@ -118,33 +118,91 @@ async function ensureBrowser(): Promise<Page> {
       
       await cdpSession.send('Page.addScriptToEvaluateOnNewDocument', {
         source: `
-          // Remove webdriver flag at the earliest possible moment
+          // ========== WEBDRIVER REMOVAL (EARLIEST) ==========
           Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+          try { delete Navigator.prototype.webdriver; } catch(e) {}
+          Object.defineProperty(Navigator.prototype, 'webdriver', { get: () => undefined, configurable: true });
           
-          // Remove phantom properties
-          delete window.callPhantom;
-          delete window._phantom;
-          delete window.phantom;
-          Object.defineProperty(window, 'callPhantom', { get: () => undefined });
-          Object.defineProperty(window, '_phantom', { get: () => undefined });
-          Object.defineProperty(window, 'phantom', { get: () => undefined });
-          
-          // Remove selenium/driver properties from document
-          ['__webdriver_script_fn', '__driver_evaluate', '__webdriver_evaluate', 
-           '__selenium_evaluate', '__fxdriver_evaluate', 'webdriver', 'driver',
-           '__webdriver_unwrapped', '__selenium_unwrapped', '__fxdriver_unwrapped']
-          .forEach(prop => {
-            try { delete document[prop]; } catch(e) {}
-            try { Object.defineProperty(document, prop, { get: () => undefined }); } catch(e) {}
+          // ========== PHANTOM PROPERTIES ==========
+          ['callPhantom', '_phantom', 'phantom', '__phantomas', 'Buffer', 'emit', 'spawn'].forEach(prop => {
+            try { delete window[prop]; } catch(e) {}
+            Object.defineProperty(window, prop, { get: () => undefined, set: () => {}, configurable: false });
           });
           
-          // Remove $cdc_ patterns (Chrome DevTools detection)
-          Object.keys(document).filter(k => /^\\$cdc_|^\\$chrome_/.test(k)).forEach(k => {
+          // ========== SELENIUM/DRIVER REMOVAL ==========
+          const seleniumProps = [
+            '__webdriver_script_fn', '__webdriver_script_func', '__webdriver_script_function',
+            '__driver_evaluate', '__webdriver_evaluate', '__selenium_evaluate', '__fxdriver_evaluate',
+            '__driver_unwrapped', '__webdriver_unwrapped', '__selenium_unwrapped', '__fxdriver_unwrapped',
+            'selenium', 'webdriver', 'driver', '_Selenium_IDE_Recorder', '_selenium', 'calledSelenium',
+            '__lastWatirAlert', '__lastWatirConfirm', '__lastWatirPrompt',
+            'domAutomation', 'domAutomationController'
+          ];
+          
+          seleniumProps.forEach(prop => {
+            try { delete window[prop]; } catch(e) {}
+            try { delete document[prop]; } catch(e) {}
+            try { Object.defineProperty(window, prop, { get: () => undefined, configurable: true }); } catch(e) {}
+            try { Object.defineProperty(document, prop, { get: () => undefined, configurable: true }); } catch(e) {}
+          });
+          
+          // ========== $cdc_ AND $chrome_ PATTERNS (Comprehensive) ==========
+          const cdcPattern = /^(\\$cdc_|\\$chrome_|\\$wdc_)/;
+          
+          // Clean document
+          Object.getOwnPropertyNames(document).filter(k => cdcPattern.test(k)).forEach(k => {
             try { delete document[k]; } catch(e) {}
           });
-          Object.keys(window).filter(k => /^\\$cdc_|^\\$chrome_/.test(k)).forEach(k => {
+          
+          // Clean window
+          Object.getOwnPropertyNames(window).filter(k => cdcPattern.test(k)).forEach(k => {
             try { delete window[k]; } catch(e) {}
           });
+          
+          // Proxy getOwnPropertyNames to hide $cdc_ forever
+          const origDocGetOwnPropertyNames = Object.getOwnPropertyNames;
+          Object.getOwnPropertyNames = function(obj) {
+            const names = origDocGetOwnPropertyNames.call(this, obj);
+            if (obj === document || obj === window) {
+              return names.filter(n => !cdcPattern.test(n));
+            }
+            return names;
+          };
+          
+          // ========== DOM ATTRIBUTE SCANNER EVASION ==========
+          // Sannysoft SELENIUM_DRIVER checks for specific DOM element attributes
+          const mutationObserver = new MutationObserver((mutations) => {
+            mutations.forEach(mutation => {
+              if (mutation.type === 'attributes') {
+                const attrName = mutation.attributeName || '';
+                if (/selenium|webdriver|driver|cdc_|wdc_/i.test(attrName)) {
+                  try { mutation.target.removeAttribute(attrName); } catch(e) {}
+                }
+              }
+            });
+          });
+          
+          // Start observing once DOM is ready
+          if (document.documentElement) {
+            mutationObserver.observe(document.documentElement, { attributes: true, subtree: true, childList: true });
+          } else {
+            document.addEventListener('DOMContentLoaded', () => {
+              mutationObserver.observe(document.documentElement, { attributes: true, subtree: true, childList: true });
+            });
+          }
+          
+          // ========== HOOK createElement to prevent injection ==========
+          const origCreateElement = document.createElement;
+          document.createElement = function(tagName, options) {
+            const el = origCreateElement.call(this, tagName, options);
+            // Override setAttribute to filter selenium attrs
+            const origSetAttribute = el.setAttribute;
+            el.setAttribute = function(name, value) {
+              if (/selenium|webdriver|driver|cdc_|wdc_/i.test(name)) return;
+              return origSetAttribute.call(this, name, value);
+            };
+            return el;
+          };
         `
       });
       
