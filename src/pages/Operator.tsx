@@ -5,6 +5,16 @@ import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { toast } from '@/hooks/use-toast';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { useQuery } from '@tanstack/react-query';
 import { 
   Send, 
@@ -134,6 +144,7 @@ const Operator = () => {
   const [loadingScreenshots, setLoadingScreenshots] = useState<Set<string>>(new Set());
   const [showSessionPanel, setShowSessionPanel] = useState(false);
   const [attachedFiles, setAttachedFiles] = useState<File[]>([]);
+  const [sessionToDelete, setSessionToDelete] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const lastScreenshotRef = useRef<Map<string, string>>(new Map());
@@ -216,13 +227,15 @@ const Operator = () => {
     setActiveSessionId(sessionId);
   };
 
-  // Delete session
-  const deleteSession = (sessionId: string) => {
-    setChatSessions(prev => prev.filter(s => s.id !== sessionId));
-    if (activeSessionId === sessionId) {
-      const remaining = chatSessions.filter(s => s.id !== sessionId);
+  // Delete session (with confirmation)
+  const confirmDeleteSession = () => {
+    if (!sessionToDelete) return;
+    setChatSessions(prev => prev.filter(s => s.id !== sessionToDelete));
+    if (activeSessionId === sessionToDelete) {
+      const remaining = chatSessions.filter(s => s.id !== sessionToDelete);
       setActiveSessionId(remaining.length > 0 ? remaining[0].id : null);
     }
+    setSessionToDelete(null);
   };
 
   // Clear current session
@@ -998,7 +1011,7 @@ const Operator = () => {
               className="h-7 px-2 rounded-lg border-primary/30 bg-primary/10 hover:bg-primary/20 text-primary text-[10px] font-medium"
             >
               <Plus className="h-3 w-3 mr-1" />
-              Чат
+              Сессия
             </Button>
             
             {/* Chat Sessions Dropdown */}
@@ -1062,7 +1075,7 @@ const Operator = () => {
                           className="h-6 w-6 p-0 opacity-0 group-hover:opacity-100"
                           onClick={(e) => {
                             e.stopPropagation();
-                            deleteSession(session.id);
+                            setSessionToDelete(session.id);
                           }}
                         >
                           <Trash2 className="h-3.5 w-3.5 text-destructive" />
@@ -1542,6 +1555,27 @@ const Operator = () => {
         </div>
         </div>
       </div>
+
+      {/* Delete Session Confirmation Dialog */}
+      <AlertDialog open={!!sessionToDelete} onOpenChange={(open) => !open && setSessionToDelete(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Удалить сессию?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Это действие нельзя отменить. Вся история сообщений и связанные задачи этой сессии будут удалены.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Отмена</AlertDialogCancel>
+            <AlertDialogAction 
+              onClick={confirmDeleteSession}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Удалить
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 };
