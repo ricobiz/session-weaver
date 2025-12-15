@@ -53,6 +53,8 @@ import { TaskSupervisor } from '@/components/TaskSupervisor';
 import { ChatScreenshot } from '@/components/operator/ChatScreenshot';
 import { RunnersPanel } from '@/components/operator/RunnersPanel';
 import { AutomationControls } from '@/components/operator/AutomationControls';
+import { CollapsibleScreenshots } from '@/components/operator/CollapsibleScreenshots';
+import { ScreenshotAnnotator } from '@/components/operator/ScreenshotAnnotator';
 import logoImage from '@/assets/logo.png';
 import { MultiSessionManager } from '@/components/operator/MultiSessionManager';
 
@@ -865,6 +867,38 @@ const Operator = () => {
     return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
   };
 
+  // Handle annotation from screenshot
+  const handleAnnotationSend = (imageUrl: string, pins: { id: string; x: number; y: number; label: string }[], message: string) => {
+    const pinDescriptions = pins.map(p => `[${p.label}]`).join(', ');
+    const annotationText = pins.length > 0 
+      ? `📍 Отметки на скриншоте: ${pinDescriptions}${message ? ` — ${message}` : ''}`
+      : message;
+    
+    addMessage({ type: 'user', content: annotationText, imageUrl });
+    
+    // Also add to conversation for AI context
+    const aiContext = pins.length > 0 
+      ? `[Пользователь прикрепил скриншот с отметками: ${pins.map(p => `${p.label} в позиции (${Math.round(p.x)}%, ${Math.round(p.y)}%)`).join('; ')}] ${message}`
+      : `[Пользователь прикрепил скриншот] ${message}`;
+    
+    updateConversation([
+      ...conversationHistory,
+      { role: 'user' as const, content: aiContext }
+    ]);
+  };
+
+  // Collect screenshots from messages for CollapsibleScreenshots
+  const screenshotMessages = chatMessages
+    .filter(msg => msg.type === 'action_screenshot' || msg.type === 'screenshot')
+    .filter(msg => msg.imageUrl)
+    .map(msg => ({
+      id: msg.id,
+      imageUrl: msg.imageUrl!,
+      timestamp: msg.timestamp,
+      profileName: msg.profileName,
+      actionName: msg.actionName,
+    }));
+
   return (
     <div className="h-screen bg-background flex flex-col overflow-hidden">
       {/* Header */}
@@ -1170,8 +1204,16 @@ const Operator = () => {
               </div>
             )}
 
-            {/* Chat Messages */}
-            {chatMessages.map((msg) => (
+            {/* Collapsible Screenshots Section */}
+            {screenshotMessages.length > 0 && (
+              <CollapsibleScreenshots 
+                screenshots={screenshotMessages}
+                onAnnotationSend={handleAnnotationSend}
+              />
+            )}
+
+            {/* Chat Messages (excluding screenshots which are in CollapsibleScreenshots) */}
+            {chatMessages.filter(msg => msg.type !== 'action_screenshot' && msg.type !== 'screenshot').map((msg) => (
               <div key={msg.id} className="animate-fade-in">
                 {/* Planning message - shows TaskPlanner */}
                 {msg.type === 'planning' && msg.userCommand && (
@@ -1208,37 +1250,18 @@ const Operator = () => {
                   </div>
                 )}
 
-                {/* Action screenshot messages */}
-                {msg.type === 'action_screenshot' && msg.imageUrl && (
-                  <div className="flex gap-3 justify-start">
-                    <div className="w-8 h-8 rounded-xl bg-success/20 flex items-center justify-center flex-shrink-0">
-                      <CheckCircle2 className="w-4 h-4 text-success" />
-                    </div>
-                    <div className="max-w-md">
-                      <ChatScreenshot
-                        imageUrl={msg.imageUrl}
-                        profileName={msg.profileName}
-                        timestamp={msg.timestamp}
-                        action={msg.actionName}
-                      />
-                    </div>
-                  </div>
-                )}
-
                 {/* Regular messages */}
-                {msg.type !== 'planning' && msg.type !== 'supervisor' && msg.type !== 'action_screenshot' && (
+                {msg.type !== 'planning' && msg.type !== 'supervisor' && (
                   <div className={`flex gap-3 ${msg.type === 'user' ? 'justify-end' : 'justify-start'}`}>
                     {msg.type !== 'user' && (
                       <div className={`w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0 ${
                         msg.type === 'error' ? 'bg-destructive/20' :
                         msg.type === 'success' ? 'bg-success/20' :
-                        msg.type === 'screenshot' ? 'bg-primary/20' :
                         msg.type === 'ai' ? 'bg-gradient-to-br from-primary/20 to-accent/20' :
                         'bg-muted/30'
                       }`}>
                         {msg.type === 'error' ? <XCircle className="w-4 h-4 text-destructive" /> :
                          msg.type === 'success' ? <CheckCircle2 className="w-4 h-4 text-success" /> :
-                         msg.type === 'screenshot' ? <Image className="w-4 h-4 text-primary" /> :
                          msg.type === 'ai' ? <Brain className="w-4 h-4 text-primary" /> :
                          <Sparkles className="w-4 h-4 text-muted-foreground" />}
                       </div>
@@ -1399,15 +1422,7 @@ const Operator = () => {
             </div>
             
             {/* Automation Controls */}
-            <AutomationControls 
-              hasActiveTasks={totalRunning > 0 || totalQueued > 0}
-              isProcessing={isProcessing}
-              onRequestScreenshot={() => {
-                // Request screenshot from first running session
-                const runningSession = activeSessions.find(s => s.status === 'running');
-                if (runningSession) requestScreenshot(runningSession.id);
-              }}
-            />
+            <AutomationControls hasActiveTasks={totalRunning > 0 || totalQueued > 0} />
             
             {/* Bottom Actions */}
             <div className="flex items-center justify-between px-1">
