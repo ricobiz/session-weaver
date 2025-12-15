@@ -66,8 +66,8 @@ export function TaskPlanner({ userCommand, onApprove, onCancel, onEdit }: TaskPl
     setError(null);
 
     try {
-      // Parse intent from command
-      const intent = parseUserIntent(userCommand);
+      // Use AI to parse intent from natural language command
+      const intent = await parseUserIntentWithAI(userCommand);
       
       // Get available profiles
       let profileIds: string[] = [];
@@ -130,6 +130,123 @@ export function TaskPlanner({ userCommand, onApprove, onCancel, onEdit }: TaskPl
     } finally {
       setIsAnalyzing(false);
     }
+  };
+
+  // AI-powered intent parsing using operator-chat
+  const parseUserIntentWithAI = async (input: string) => {
+    try {
+      const response = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/operator-chat`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            messages: [
+              {
+                role: 'user',
+                content: `Parse this user command and extract the intent. Return ONLY valid JSON:
+                
+User command: "${input}"
+
+Extract and return JSON with these fields:
+{
+  "platform": "spotify|youtube|instagram|tiktok|twitter|google|vk|web|generic",
+  "goal": "play|view|like|comment|follow|scroll|screenshot|navigate|search",
+  "entry_method": "url|search",
+  "target": "URL or search query - IMPORTANT: if user mentions a site like 'Google', 'YouTube', etc - convert to full URL like 'https://www.google.com'",
+  "profile_count": 1,
+  "run_count": 1,
+  "behavior": {
+    "min_duration": 30,
+    "max_duration": 120,
+    "randomize": true
+  },
+  "human_summary": "Brief description of what will be done"
+}
+
+Rules:
+- If user says "go to Google" or "open Google" -> target should be "https://www.google.com"
+- If user mentions ANY website name, convert to proper URL (https://...)
+- Understand Russian commands like "перейди на", "открой", "сделай скриншот"
+- Default goal is "navigate" if just visiting a site
+- If "screenshot" mentioned, goal should be "screenshot"`
+              }
+            ]
+          }),
+        }
+      );
+
+      if (!response.ok) {
+        console.warn('AI parsing failed, falling back to regex parser');
+        return parseUserIntentFallback(input);
+      }
+
+      const data = await response.json();
+      
+      // Handle different response formats
+      let parsed;
+      if (data.type === 'task_plan' && data.task) {
+        // Convert task_plan format to our intent format
+        parsed = {
+          platform: data.task.platform || 'generic',
+          goal: data.task.goal || 'navigate',
+          entry_method: data.task.entry_method === 'direct' ? 'url' : data.task.entry_method || 'url',
+          target: data.task.target_url || data.task.search_query || '',
+          profile_count: data.task.profile_count || 1,
+          run_count: data.task.run_count || 1,
+          behavior: {
+            min_duration: data.task.behavior?.watch_duration_percent || 30,
+            max_duration: 120,
+            randomize: true,
+          },
+          human_summary: data.reasoning || `${data.task.goal} on ${data.task.platform}`,
+        };
+      } else if (data.type === 'conversation' && data.message) {
+        // AI responded with conversation - try to extract JSON from message
+        const jsonMatch = data.message.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+          parsed = JSON.parse(jsonMatch[0]);
+        } else {
+          console.warn('AI did not return structured data, falling back');
+          return parseUserIntentFallback(input);
+        }
+      } else if (data.platform || data.goal || data.target) {
+        // Direct intent format
+        parsed = data;
+      } else {
+        console.warn('Unknown AI response format, falling back');
+        return parseUserIntentFallback(input);
+      }
+
+      // Validate and fix target URL
+      if (parsed.entry_method === 'url' && parsed.target && !parsed.target.startsWith('http')) {
+        parsed.target = `https://${parsed.target}`;
+      }
+
+      // Ensure all required fields
+      return {
+        platform: parsed.platform || 'generic',
+        goal: parsed.goal || 'navigate',
+        entry_method: parsed.entry_method || 'url',
+        target: parsed.target || '',
+        profile_count: parsed.profile_count || 1,
+        run_count: parsed.run_count || 1,
+        behavior: {
+          min_duration: parsed.behavior?.min_duration || 30,
+          max_duration: parsed.behavior?.max_duration || 120,
+          randomize: parsed.behavior?.randomize ?? true,
+        },
+        human_summary: parsed.human_summary || `${parsed.goal} ${parsed.target}`,
+      };
+    } catch (err) {
+      console.error('AI parsing error:', err);
+      return parseUserIntentFallback(input);
+    }
+  };
+
+  // Fallback regex-based parser (used when AI is unavailable)
+  const parseUserIntentFallback = (input: string) => {
+    return parseUserIntent(input);
   };
 
   const parseUserIntent = (input: string) => {
