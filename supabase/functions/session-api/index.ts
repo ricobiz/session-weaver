@@ -47,6 +47,17 @@ serve(async (req) => {
   console.log(`[session-api] ${req.method} ${path} from runner: ${runnerId}`);
 
   try {
+    // Root path - return service info
+    if ((path === '' || path === '/') && (req.method === 'GET' || req.method === 'POST')) {
+      return new Response(JSON.stringify({ 
+        status: 'ok',
+        service: 'session-api',
+        version: '1.0.0'
+      }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
     // GET /jobs - Claim next available job from queue
     if (req.method === 'GET' && path === '/jobs') {
       // Get scheduler config
