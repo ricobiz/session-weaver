@@ -78,7 +78,7 @@ export function TaskList({
 
   return (
     <ScrollArea className="h-[280px]">
-      <div className="space-y-2 pr-3">
+      <div className="space-y-2 pr-3 overflow-hidden">
         {tasks.map((task) => {
           const config = STATUS_CONFIG[task.status as keyof typeof STATUS_CONFIG] || STATUS_CONFIG.draft;
           const StatusIcon = config.icon;
@@ -93,7 +93,7 @@ export function TaskList({
           return (
             <div
               key={task.id}
-              className={`p-3 rounded-lg border cursor-pointer transition-all ${
+              className={`p-3 rounded-lg border cursor-pointer transition-all overflow-hidden ${
                 isSelected 
                   ? 'border-primary bg-primary/5' 
                   : 'border-border hover:border-muted-foreground/50 bg-card/50'
