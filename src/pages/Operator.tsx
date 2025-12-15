@@ -61,6 +61,7 @@ interface TaskSummary {
   sessionsFailed: number;
   sessionsRunning: number;
   startedAt: string | null;
+  lastScreenshotUrl?: string | null;
 }
 
 interface ActiveSession {
@@ -324,14 +325,18 @@ const Operator = () => {
         (tasks || []).map(async (task) => {
           const { data: sessions } = await supabase
             .from('sessions')
-            .select('status')
-            .eq('task_id', task.id);
+            .select('status, last_screenshot_url')
+            .eq('task_id', task.id)
+            .order('updated_at', { ascending: false });
           
           const completed = sessions?.filter(s => s.status === 'success').length || 0;
           const failed = sessions?.filter(s => s.status === 'error').length || 0;
           const running = sessions?.filter(s => s.status === 'running').length || 0;
           const total = sessions?.length || 0;
           const progress = total > 0 ? Math.round((completed / total) * 100) : 0;
+          
+          // Get the last screenshot from any session
+          const lastScreenshot = sessions?.find(s => s.last_screenshot_url)?.last_screenshot_url;
           
           return {
             id: task.id,
@@ -343,6 +348,7 @@ const Operator = () => {
             sessionsFailed: failed,
             sessionsRunning: running,
             startedAt: task.started_at,
+            lastScreenshotUrl: lastScreenshot,
           };
         })
       );
@@ -1118,7 +1124,7 @@ const Operator = () => {
                     {allTasks.map((task) => (
                       <div 
                         key={task.id} 
-                        className={`glass-card p-3 flex items-center gap-3 ${
+                        className={`glass-card p-3 ${
                           task.status === 'completed' || task.progress === 100 
                             ? 'border-success/30' 
                             : task.status === 'cancelled' || task.status === 'failed'
@@ -1126,36 +1132,47 @@ const Operator = () => {
                             : ''
                         }`}
                       >
-                        {/* Status Icon */}
-                        <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${
-                          task.status === 'completed' || task.progress === 100 
-                            ? 'bg-success/20' 
-                            : task.status === 'cancelled' || task.status === 'failed'
-                            ? 'bg-destructive/20'
-                            : 'bg-muted/50'
-                        }`}>
-                          {task.status === 'completed' || task.progress === 100 ? (
-                            <CheckCircle2 className="w-4 h-4 text-success" />
-                          ) : task.status === 'cancelled' || task.status === 'failed' ? (
-                            <XCircle className="w-4 h-4 text-destructive" />
+                        <div className="flex items-center gap-3">
+                          {/* Screenshot Preview or Status Icon */}
+                          {task.lastScreenshotUrl ? (
+                            <div className="w-12 h-12 rounded-lg overflow-hidden flex-shrink-0 border border-border/50">
+                              <img 
+                                src={task.lastScreenshotUrl} 
+                                alt="Result" 
+                                className="w-full h-full object-cover"
+                              />
+                            </div>
                           ) : (
-                            <Clock className="w-4 h-4 text-muted-foreground" />
+                            <div className={`w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 ${
+                              task.status === 'completed' || task.progress === 100 
+                                ? 'bg-success/20' 
+                                : task.status === 'cancelled' || task.status === 'failed'
+                                ? 'bg-destructive/20'
+                                : 'bg-muted/50'
+                            }`}>
+                              {task.status === 'completed' || task.progress === 100 ? (
+                                <CheckCircle2 className="w-4 h-4 text-success" />
+                              ) : task.status === 'cancelled' || task.status === 'failed' ? (
+                                <XCircle className="w-4 h-4 text-destructive" />
+                              ) : (
+                                <Clock className="w-4 h-4 text-muted-foreground" />
+                              )}
+                            </div>
                           )}
-                        </div>
-                        
-                        {/* Task Info */}
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-medium truncate">{task.name}</p>
-                          <p className="text-xs text-muted-foreground">
-                            {task.sessionsCompleted}/{task.sessionsTotal} completed
-                            {task.sessionsFailed > 0 && (
-                              <span className="text-destructive ml-1">• {task.sessionsFailed} failed</span>
-                            )}
-                          </p>
-                        </div>
-                        
-                        {/* Actions */}
-                        <div className="flex items-center gap-1">
+                          
+                          {/* Task Info */}
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-medium truncate">{task.name}</p>
+                            <p className="text-xs text-muted-foreground">
+                              {task.sessionsCompleted}/{task.sessionsTotal} completed
+                              {task.sessionsFailed > 0 && (
+                                <span className="text-destructive ml-1">• {task.sessionsFailed} failed</span>
+                              )}
+                            </p>
+                          </div>
+                          
+                          {/* Actions */}
+                          <div className="flex items-center gap-1">
                           <Button
                             size="sm"
                             variant="ghost"
@@ -1174,6 +1191,7 @@ const Operator = () => {
                           >
                             <Trash2 className="w-3.5 h-3.5" />
                           </Button>
+                          </div>
                         </div>
                       </div>
                     ))}
