@@ -55,7 +55,7 @@ import { RunnersPanel } from '@/components/operator/RunnersPanel';
 import { AutomationControls } from '@/components/operator/AutomationControls';
 import { CollapsibleScreenshots } from '@/components/operator/CollapsibleScreenshots';
 import { ScreenshotAnnotator } from '@/components/operator/ScreenshotAnnotator';
-import logoImage from '@/assets/logo.png';
+// Logo removed - will be added later
 import { MultiSessionManager } from '@/components/operator/MultiSessionManager';
 
 interface TaskSummary {
@@ -596,17 +596,40 @@ const Operator = () => {
   };
 
   const handleTaskComplete = (taskId: string, success: boolean) => {
-    // Remove supervisor message
-    setChatSessions(prev => prev.map(s => 
-      s.id === activeSessionId 
-        ? { ...s, messages: s.messages.filter(m => m.taskId !== taskId) }
-        : s
-    ));
+    // Remove supervisor message and check if we already have a completion message for this task
+    setChatSessions(prev => prev.map(s => {
+      if (s.id !== activeSessionId) return s;
+      
+      // Check if we already have a completion message for this task
+      const hasCompletionMessage = s.messages.some(
+        m => (m.type === 'success' || m.type === 'error') && 
+             m.content.includes('Task completed') && 
+             m.taskId === taskId
+      );
+      
+      if (hasCompletionMessage) {
+        // Just remove supervisor, don't add another completion
+        return { ...s, messages: s.messages.filter(m => m.taskId !== taskId) };
+      }
+      
+      return { ...s, messages: s.messages.filter(m => m.taskId !== taskId) };
+    }));
     
-    addMessage({
-      type: success ? 'success' : 'error',
-      content: success ? 'Task completed successfully!' : 'Task finished with some failures',
-    });
+    // Check current messages before adding
+    const currentMessages = chatMessages;
+    const alreadyHasCompletion = currentMessages.some(
+      m => (m.type === 'success' || m.type === 'error') && 
+           m.content.includes('Task completed') &&
+           Math.abs(new Date().getTime() - m.timestamp.getTime()) < 5000 // Within 5 seconds
+    );
+    
+    if (!alreadyHasCompletion) {
+      addMessage({
+        type: success ? 'success' : 'error',
+        content: success ? 'Задача выполнена!' : 'Задача завершена с ошибками',
+        taskId,
+      });
+    }
 
     refetchTasks();
     refetchSessions();
@@ -900,13 +923,12 @@ const Operator = () => {
     }));
 
   return (
-    <div className="h-screen bg-background flex flex-col overflow-hidden">
+    <div className="h-screen w-screen max-w-full bg-background flex flex-col overflow-hidden">
       {/* Header */}
       <header className="flex-shrink-0 glass-panel border-x-0 border-t-0 px-3 py-2">
-        <div className="flex items-center justify-between gap-2">
-          {/* Left: Logo + Chat selector */}
+        <div className="flex items-center justify-between gap-2 w-full">
+          {/* Left: Chat selector */}
           <div className="flex items-center gap-2 min-w-0">
-            <img src={logoImage} alt="Logo" className="w-8 h-8 rounded-xl flex-shrink-0" />
             
             {/* Chat Sessions Dropdown */}
             <DropdownMenu>
@@ -1005,10 +1027,10 @@ const Operator = () => {
       </header>
 
       {/* Stats Bar - glassmorphism */}
-      <div className="flex-shrink-0 glass-panel border-t-0 px-4 py-2.5">
-        <div className="flex items-center gap-4">
+      <div className="flex-shrink-0 glass-panel border-t-0 px-3 py-2 overflow-x-auto">
+        <div className="flex items-center gap-2 min-w-0">
           {/* Quick Stats */}
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-2 flex-wrap">
             {totalRunning > 0 && (
               <div className="session-chip border-primary/30">
                 <div className="status-dot status-dot-primary" />
@@ -1036,7 +1058,7 @@ const Operator = () => {
       </div>
 
       {/* Main Layout */}
-      <div className="flex-1 flex min-h-0 overflow-hidden">
+      <div className="flex-1 flex min-h-0 overflow-hidden w-full">
         {/* Session Panel (collapsible) */}
         {showSessionPanel && (
           <div className="w-72 glass-panel border-t-0 border-l-0 flex-shrink-0 flex flex-col overflow-hidden">
@@ -1048,9 +1070,9 @@ const Operator = () => {
         )}
 
         {/* Chat Area */}
-        <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
+        <div className="flex-1 flex flex-col min-h-0 min-w-0 overflow-hidden">
           <ScrollArea className="flex-1 scrollbar-thin" ref={scrollRef}>
-            <div className="p-4 space-y-4 max-w-3xl mx-auto">
+            <div className="p-3 sm:p-4 space-y-3 max-w-3xl mx-auto w-full">
 
             {/* Active Tasks as glass cards */}
             {activeTasks.length > 0 && (
@@ -1340,8 +1362,8 @@ const Operator = () => {
         </ScrollArea>
 
         {/* Input Area */}
-        <div className="flex-shrink-0 glass-panel border-t-0 border-x-0 p-3">
-          <div className="max-w-3xl mx-auto space-y-2">
+        <div className="flex-shrink-0 glass-panel border-t-0 border-x-0 p-2 sm:p-3">
+          <div className="max-w-3xl mx-auto space-y-2 w-full">
             {/* Attached Files Preview */}
             {attachedFiles.length > 0 && (
               <div className="flex flex-wrap gap-2 p-2 rounded-xl bg-muted/30 border border-border/50">
