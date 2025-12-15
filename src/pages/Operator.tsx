@@ -618,7 +618,17 @@ const Operator = () => {
     ));
   };
 
-  const handleTaskComplete = (taskId: string, success: boolean) => {
+  const handleTaskComplete = async (taskId: string, success: boolean) => {
+    // Update task status in database
+    try {
+      await supabase.from('tasks').update({
+        status: success ? 'completed' : 'failed',
+        completed_at: new Date().toISOString(),
+      }).eq('id', taskId);
+    } catch (e) {
+      console.error('Failed to update task status:', e);
+    }
+
     // Remove supervisor message and check if we already have a completion message for this task
     setChatSessions(prev => prev.map(s => {
       if (s.id !== activeSessionId) return s;
@@ -626,24 +636,23 @@ const Operator = () => {
       // Check if we already have a completion message for this task
       const hasCompletionMessage = s.messages.some(
         m => (m.type === 'success' || m.type === 'error') && 
-             m.content.includes('Task completed') && 
+             m.content.includes('Задача') && 
              m.taskId === taskId
       );
       
       if (hasCompletionMessage) {
         // Just remove supervisor, don't add another completion
-        return { ...s, messages: s.messages.filter(m => m.taskId !== taskId) };
+        return { ...s, messages: s.messages.filter(m => m.type === 'supervisor' && m.taskId === taskId ? false : true) };
       }
       
-      return { ...s, messages: s.messages.filter(m => m.taskId !== taskId) };
+      return { ...s, messages: s.messages.filter(m => !(m.type === 'supervisor' && m.taskId === taskId)) };
     }));
     
     // Check current messages before adding
     const currentMessages = chatMessages;
     const alreadyHasCompletion = currentMessages.some(
       m => (m.type === 'success' || m.type === 'error') && 
-           m.content.includes('Task completed') &&
-           Math.abs(new Date().getTime() - m.timestamp.getTime()) < 5000 // Within 5 seconds
+           m.taskId === taskId
     );
     
     if (!alreadyHasCompletion) {
@@ -656,6 +665,7 @@ const Operator = () => {
 
     refetchTasks();
     refetchSessions();
+    refetchAllTasks();
   };
 
   const requestScreenshot = async (sessionId: string) => {
@@ -990,31 +1000,51 @@ const Operator = () => {
                 {chatSessions.length === 0 ? (
                   <div className="p-2 text-xs text-muted-foreground text-center">Нет истории</div>
                 ) : (
-                  chatSessions.slice(0, 10).map(session => (
-                    <DropdownMenuItem 
-                      key={session.id}
-                      onClick={() => switchSession(session.id)}
-                      className="flex items-center justify-between group"
-                    >
-                      <div className="flex items-center gap-2 flex-1 min-w-0">
-                        <span className="truncate text-sm">{session.name}</span>
-                        {session.id === activeSessionId && (
-                          <span className="w-1.5 h-1.5 rounded-full bg-primary" />
-                        )}
-                      </div>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="h-6 w-6 p-0 opacity-0 group-hover:opacity-100"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          deleteSession(session.id);
-                        }}
+                  chatSessions.slice(0, 10).map(session => {
+                    // Calculate chat status based on its tasks
+                    const chatTaskIds = session.taskIds || [];
+                    const chatTasks = allTasks.filter(t => chatTaskIds.includes(t.id));
+                    const hasRunning = chatTasks.some(t => t.status === 'active' || t.status === 'pending' || t.sessionsRunning > 0);
+                    const hasFailed = chatTasks.some(t => t.status === 'failed' || t.status === 'cancelled' || t.sessionsFailed > 0);
+                    const allCompleted = chatTasks.length > 0 && chatTasks.every(t => 
+                      t.status === 'completed' || t.progress === 100
+                    );
+                    
+                    // Status: yellow (running) > red (failed) > green (completed) > none
+                    const statusColor = hasRunning ? 'bg-warning animate-pulse' : 
+                                       hasFailed ? 'bg-destructive' : 
+                                       allCompleted ? 'bg-success' : null;
+                    
+                    return (
+                      <DropdownMenuItem 
+                        key={session.id}
+                        onClick={() => switchSession(session.id)}
+                        className="flex items-center justify-between group"
                       >
-                        <Trash2 className="h-3.5 w-3.5 text-destructive" />
-                      </Button>
-                    </DropdownMenuItem>
-                  ))
+                        <div className="flex items-center gap-2 flex-1 min-w-0">
+                          {/* Task status indicator */}
+                          {statusColor && (
+                            <span className={`w-2 h-2 rounded-full ${statusColor} flex-shrink-0`} />
+                          )}
+                          <span className="truncate text-sm">{session.name}</span>
+                          {session.id === activeSessionId && (
+                            <span className="w-1.5 h-1.5 rounded-full bg-primary flex-shrink-0" />
+                          )}
+                        </div>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-6 w-6 p-0 opacity-0 group-hover:opacity-100"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            deleteSession(session.id);
+                          }}
+                        >
+                          <Trash2 className="h-3.5 w-3.5 text-destructive" />
+                        </Button>
+                      </DropdownMenuItem>
+                    );
+                  })
                 )}
               </DropdownMenuContent>
             </DropdownMenu>
