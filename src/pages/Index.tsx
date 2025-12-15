@@ -6,6 +6,7 @@ import { SessionCard } from '@/components/SessionCard';
 import { LogViewer } from '@/components/LogViewer';
 import { ScenarioViewer } from '@/components/ScenarioViewer';
 import { ProfileList } from '@/components/ProfileList';
+import { ProfileDetailPanel } from '@/components/ProfileDetailPanel';
 import { CreateProfileDialog } from '@/components/CreateProfileDialog';
 import { CreateScenarioDialog } from '@/components/CreateScenarioDialog';
 import { SessionTimeline } from '@/components/SessionTimeline';
@@ -65,7 +66,8 @@ import {
   Cpu,
   Shield,
   Zap,
-  Trash2
+  Trash2,
+  Fingerprint
 } from 'lucide-react';
 import { Database } from '@/integrations/supabase/types';
 
@@ -93,11 +95,14 @@ const Index = () => {
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
   const [selectedScenario, setSelectedScenario] = useState<Scenario | null>(null);
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
+  const [selectedProfileId, setSelectedProfileId] = useState<string | null>(null);
   const [profileDialogOpen, setProfileDialogOpen] = useState(false);
   const [scenarioDialogOpen, setScenarioDialogOpen] = useState(false);
-  const [rightPanelView, setRightPanelView] = useState<'live' | 'logs' | 'timeline' | 'metrics' | 'ai' | 'settings' | 'setup'>('setup');
+  const [rightPanelView, setRightPanelView] = useState<'live' | 'logs' | 'timeline' | 'metrics' | 'ai' | 'settings' | 'setup' | 'profile'>('setup');
   const [aiModel, setAiModel] = useState(() => localStorage.getItem('ai_selected_model') || 'anthropic/claude-sonnet-4-5');
   const [showSetupModal, setShowSetupModal] = useState(false);
+
+  const selectedProfile = profiles.find(p => p.id === selectedProfileId) || null;
 
   const { data: logs = [] } = useSessionLogs(selectedSessionId);
 
@@ -388,16 +393,12 @@ const Index = () => {
                     </div>
                   ) : (
                     <ProfileList 
-                      profiles={profiles.map(p => ({
-                        id: p.id,
-                        name: p.name,
-                        email: p.email,
-                        networkConfig: (p.network_config as any)?.region || 'Default',
-                        lastActive: p.last_active || p.created_at,
-                        sessionsRun: p.sessions_run || 0,
-                        proxyUrl: (p as any).proxy_url,
-                        userAgent: (p as any).user_agent,
-                      }))}
+                      profiles={profiles}
+                      selectedId={selectedProfileId || undefined}
+                      onSelect={(profile) => {
+                        setSelectedProfileId(profile.id);
+                        setRightPanelView('profile');
+                      }}
                       onDelete={handleDeleteProfile}
                     />
                   )}
@@ -503,6 +504,7 @@ const Index = () => {
                 {rightPanelView === 'metrics' && <BarChart3 className="w-4 h-4 text-primary" />}
                 {rightPanelView === 'ai' && <Sparkles className="w-4 h-4 text-primary" />}
                 {rightPanelView === 'settings' && <Settings className="w-4 h-4 text-primary" />}
+                {rightPanelView === 'profile' && <Users className="w-4 h-4 text-primary" />}
                 {rightPanelView === 'setup' && 'System Setup'}
                 {rightPanelView === 'live' && 'Live Session'}
                 {rightPanelView === 'logs' && 'Session Output'}
@@ -510,6 +512,7 @@ const Index = () => {
                 {rightPanelView === 'metrics' && 'Metrics'}
                 {rightPanelView === 'ai' && 'AI Insights'}
                 {rightPanelView === 'settings' && 'AI Settings'}
+                {rightPanelView === 'profile' && 'Agent Profile'}
               </div>
               <div className="flex gap-1">
                 <Button
@@ -568,6 +571,15 @@ const Index = () => {
                   className="h-7 px-2"
                 >
                   <Settings className="w-3.5 h-3.5" />
+                </Button>
+                <Button
+                  size="sm"
+                  variant={rightPanelView === 'profile' ? 'default' : 'ghost'}
+                  onClick={() => setRightPanelView('profile')}
+                  className="h-7 px-2"
+                  title="Agent Profile"
+                >
+                  <Fingerprint className="w-3.5 h-3.5" />
                 </Button>
               </div>
             </div>
@@ -650,6 +662,13 @@ const Index = () => {
 
             {rightPanelView === 'ai' && (
               <AIInsightsPanel />
+            )}
+
+            {rightPanelView === 'profile' && (
+              <ProfileDetailPanel 
+                profile={selectedProfile}
+                onClose={() => setRightPanelView('setup')}
+              />
             )}
 
             {rightPanelView === 'settings' && (
