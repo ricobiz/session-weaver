@@ -14,7 +14,7 @@ export interface ScenarioStep {
   // No vision-specific fields here - it's internal capability
 }
 
-// Profile with storage state
+// Profile with storage state and fingerprint
 export interface Profile {
   id: string;
   name: string;
@@ -22,6 +22,9 @@ export interface Profile {
   storage_state: StorageState | null;
   network_config: NetworkConfig | null;
   session_context: Record<string, unknown>;
+  fingerprint?: any; // Saved browser fingerprint for identity persistence
+  user_agent?: string;
+  proxy_url?: string;
 }
 
 // Playwright storage state format

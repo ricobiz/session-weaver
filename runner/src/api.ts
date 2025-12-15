@@ -162,6 +162,15 @@ export class ApiClient {
     return result !== null;
   }
 
+  // Save profile fingerprint
+  async saveProfileFingerprint(
+    profileId: string,
+    fingerprint: any
+  ): Promise<boolean> {
+    const result = await this.request('POST', `/profiles/${profileId}/fingerprint`, { fingerprint });
+    return result !== null;
+  }
+
   // Send health report
   async sendHealthReport(report: HealthReport): Promise<boolean> {
     const result = await this.request('POST', '/health', report);

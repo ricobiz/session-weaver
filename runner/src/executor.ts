@@ -14,7 +14,7 @@ import {
   DEFAULT_RETRY_CONFIG 
 } from './retry';
 import { detectCaptcha, resolveCaptcha } from './captcha';
-import { generateFingerprint, getRandomPreset, getFingerprintScript, Fingerprint } from './stealth/fingerprint';
+import { generateFingerprint, injectFingerprint, getFingerprintedContextOptions, clearFingerprintCache, Fingerprint, FINGERPRINT_PRESETS, getRandomPreset, getFingerprintScript } from './stealth/fingerprint';
 import { AutonomousExecutor } from './autonomous';
 
 // Apply stealth plugin globally
@@ -466,8 +466,30 @@ export class SessionExecutor {
     const profile = session.profiles;
     const networkConfig = profile?.network_config;
     
-    // Generate consistent fingerprint for this session
-    const fingerprint = generateFingerprint(getRandomPreset());
+    // Use saved fingerprint from profile OR generate new one
+    let fingerprint: any;
+    let isNewFingerprint = false;
+    
+    // Check if profile has saved fingerprint
+    if (profile && (profile as any).fingerprint && Object.keys((profile as any).fingerprint).length > 0) {
+      fingerprint = (profile as any).fingerprint;
+      globalLog('info', `Using saved fingerprint for profile: ${profile.name}`);
+    } else {
+      // Generate new fingerprint using Apify libraries
+      fingerprint = await generateFingerprint({
+        browsers: [{ name: 'chrome', minVersion: 100 }],
+        devices: ['desktop'],
+        operatingSystems: ['windows', 'macos'],
+        locales: ['en-US', 'en'],
+      });
+      isNewFingerprint = true;
+      globalLog('info', `Generated new fingerprint for profile: ${profile?.name || 'unknown'}`);
+    }
+    
+    // Extract fingerprint data
+    const fp = fingerprint.fingerprint || fingerprint;
+    const nav = fp.navigator || {};
+    const screen = fp.screen || {};
 
     const contextOptions: any = {
       // Bypass CSP to allow our stealth scripts
@@ -480,27 +502,27 @@ export class SessionExecutor {
       contextOptions.screen = networkConfig.viewport;
     } else {
       contextOptions.viewport = { 
-        width: fingerprint.screen.width, 
-        height: fingerprint.screen.height 
+        width: screen.width || 1920, 
+        height: screen.height || 1080 
       };
       contextOptions.screen = {
-        width: fingerprint.screen.width,
-        height: fingerprint.screen.height
+        width: screen.width || 1920,
+        height: screen.height || 1080
       };
     }
 
-    // Apply user agent from fingerprint for consistency
+    // Apply user agent from fingerprint or profile for consistency
     if (networkConfig?.userAgent) {
       contextOptions.userAgent = networkConfig.userAgent;
-    } else {
-      contextOptions.userAgent = fingerprint.userAgent;
+    } else if (nav.userAgent) {
+      contextOptions.userAgent = nav.userAgent;
     }
 
     // Apply locale
     if (networkConfig?.locale) {
       contextOptions.locale = networkConfig.locale;
     } else {
-      contextOptions.locale = 'en-US';
+      contextOptions.locale = nav.language || 'en-US';
     }
 
     // Apply timezone
@@ -515,30 +537,31 @@ export class SessionExecutor {
     contextOptions.permissions = ['geolocation'];
 
     // Apply device scale factor from fingerprint
-    contextOptions.deviceScaleFactor = fingerprint.screen.pixelRatio;
+    contextOptions.deviceScaleFactor = screen.devicePixelRatio || screen.pixelRatio || 1;
 
     // Color scheme
     contextOptions.colorScheme = 'light';
 
-    // Apply storage state if available
+    // Apply storage state if available (cookies, localStorage)
     if (profile?.storage_state && Object.keys(profile.storage_state).length > 0) {
       contextOptions.storageState = profile.storage_state;
+      globalLog('info', `Loaded saved storage state for profile: ${profile.name}`);
     }
 
     const context = await browser.newContext(contextOptions);
 
-    // Apply fingerprint consistency script via CDP
-    try {
-      const page = await context.newPage();
-      const cdpSession = await context.newCDPSession(page);
-      await cdpSession.send('Page.addScriptToEvaluateOnNewDocument', {
-        source: getFingerprintScript(fingerprint)
-      });
-      await cdpSession.detach();
-      await page.close();
-      globalLog('info', `Fingerprint applied: ${fingerprint.platform}, ${fingerprint.screen.width}x${fingerprint.screen.height}`);
-    } catch (cdpError) {
-      globalLog('debug', 'CDP session not available for fingerprint injection');
+    // Inject fingerprint using fingerprint-injector (or fallback)
+    const injected = await injectFingerprint(context, fingerprint);
+    globalLog('info', `Fingerprint injection: ${injected ? 'success' : 'fallback used'}`);
+    
+    // Save new fingerprint to profile if generated
+    if (isNewFingerprint && profile?.id) {
+      try {
+        await this.api.saveProfileFingerprint(profile.id, fingerprint);
+        globalLog('info', `Saved fingerprint to profile: ${profile.name}`);
+      } catch (e) {
+        globalLog('debug', `Failed to save fingerprint: ${e}`);
+      }
     }
 
     return context;
