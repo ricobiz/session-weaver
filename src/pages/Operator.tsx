@@ -923,146 +923,125 @@ const Operator = () => {
     }));
 
   return (
-    <div className="h-screen w-screen max-w-full bg-background flex flex-col overflow-hidden">
-      {/* Header */}
-      <header className="flex-shrink-0 glass-panel border-x-0 border-t-0 px-3 py-2">
-        <div className="flex items-center justify-between gap-2 w-full">
-          {/* Left: Chat selector */}
-          <div className="flex items-center gap-2 min-w-0">
-            
-            {/* Chat Sessions Dropdown */}
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="sm" className="h-8 px-2 gap-1.5 hover:bg-muted/50 rounded-lg">
-                  <MessageSquare className="h-3.5 w-3.5 text-primary flex-shrink-0" />
-                  <span className="text-sm font-medium truncate max-w-[80px] hidden sm:inline">
-                    {currentSession?.name || 'Новый чат'}
-                  </span>
-                  <ChevronDown className="h-3 w-3 text-muted-foreground flex-shrink-0" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="start" className="w-64 glass-panel border-border/50">
-                <DropdownMenuItem onClick={() => createNewSession()} className="gap-2">
-                  <Plus className="h-4 w-4 text-primary" />
-                  <span>Новый чат</span>
-                </DropdownMenuItem>
-                {chatSessions.length > 0 && <DropdownMenuSeparator />}
-                {chatSessions.slice(0, 10).map(session => (
-                  <DropdownMenuItem 
-                    key={session.id}
-                    onClick={() => switchSession(session.id)}
-                    className="flex items-center justify-between group"
+    <div className="h-screen w-full bg-background flex flex-col overflow-hidden box-border">
+      {/* Compact Header - all in one line */}
+      <header className="flex-shrink-0 glass-panel border-x-0 border-t-0 px-2 py-1.5">
+        <div className="flex items-center gap-1.5 w-full overflow-x-auto">
+          {/* Chat Sessions Dropdown */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="sm" className="h-7 px-2 gap-1 hover:bg-muted/50 rounded-lg flex-shrink-0">
+                <MessageSquare className="h-3.5 w-3.5 text-primary" />
+                <ChevronDown className="h-3 w-3 text-muted-foreground" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" className="w-64 glass-panel border-border/50">
+              <DropdownMenuItem onClick={() => createNewSession()} className="gap-2">
+                <Plus className="h-4 w-4 text-primary" />
+                <span>Новый чат</span>
+              </DropdownMenuItem>
+              {chatSessions.length > 0 && <DropdownMenuSeparator />}
+              {chatSessions.slice(0, 10).map(session => (
+                <DropdownMenuItem 
+                  key={session.id}
+                  onClick={() => switchSession(session.id)}
+                  className="flex items-center justify-between group"
+                >
+                  <div className="flex items-center gap-2 flex-1 min-w-0">
+                    <History className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground" />
+                    <span className="truncate text-sm">{session.name}</span>
+                    {session.id === activeSessionId && (
+                      <span className="w-1.5 h-1.5 rounded-full bg-primary" />
+                    )}
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-6 w-6 p-0 opacity-0 group-hover:opacity-100"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      deleteSession(session.id);
+                    }}
                   >
-                    <div className="flex items-center gap-2 flex-1 min-w-0">
-                      <History className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground" />
-                      <span className="truncate text-sm">{session.name}</span>
-                      {session.id === activeSessionId && (
-                        <span className="w-1.5 h-1.5 rounded-full bg-primary" />
-                      )}
-                    </div>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="h-6 w-6 p-0 opacity-0 group-hover:opacity-100"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        deleteSession(session.id);
-                      }}
-                    >
-                      <Trash2 className="h-3.5 w-3.5 text-destructive" />
-                    </Button>
-                  </DropdownMenuItem>
-                ))}
-              </DropdownMenuContent>
-            </DropdownMenu>
+                    <Trash2 className="h-3.5 w-3.5 text-destructive" />
+                  </Button>
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+
+          {/* Stats inline */}
+          <div className="flex items-center gap-1.5 flex-1 min-w-0">
+            {totalRunning > 0 && (
+              <div className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-primary/10 border border-primary/20">
+                <div className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
+                <span className="text-[10px] font-medium text-primary">{totalRunning}</span>
+              </div>
+            )}
+            {totalQueued > 0 && (
+              <div className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-muted/50 border border-border/30">
+                <Clock className="w-3 h-3 text-muted-foreground" />
+                <span className="text-[10px] text-muted-foreground">{totalQueued}</span>
+              </div>
+            )}
+            <div className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-success/10 border border-success/20">
+              <CheckCircle2 className="w-3 h-3 text-success" />
+              <span className="text-[10px] text-success font-medium">{totalCompleted}</span>
+            </div>
+            {totalFailed > 0 && (
+              <div className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-destructive/10 border border-destructive/20">
+                <XCircle className="w-3 h-3 text-destructive" />
+                <span className="text-[10px] text-destructive">{totalFailed}</span>
+              </div>
+            )}
           </div>
-          
-          {/* Right: Compact Actions */}
-          <div className="flex items-center gap-1.5 flex-shrink-0">
-            {/* Status Badge */}
-            <div className={`flex items-center gap-1.5 px-2 py-1 rounded-lg text-xs font-medium ${
-              systemOnline 
-                ? 'bg-success/10 text-success border border-success/20' 
-                : 'bg-destructive/10 text-destructive border border-destructive/20'
+
+          {/* Right: Actions */}
+          <div className="flex items-center gap-1 flex-shrink-0">
+            {/* Status */}
+            <div className={`flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium ${
+              systemOnline ? 'bg-success/10 text-success' : 'bg-destructive/10 text-destructive'
             }`}>
               {systemOnline ? (
                 <>
                   <span className="w-1.5 h-1.5 rounded-full bg-success animate-pulse" />
-                  <span className="hidden sm:inline">Online</span>
-                  <span className="text-success/60">• {onlineRunners.length}</span>
+                  <span>{onlineRunners.length}</span>
                 </>
               ) : (
-                <>
-                  <WifiOff className="w-3 h-3" />
-                  <span className="hidden sm:inline">Offline</span>
-                </>
+                <WifiOff className="w-3 h-3" />
               )}
             </div>
             
-            {/* Icon Buttons */}
             <Button 
               variant="ghost" 
               size="sm" 
-              className={`h-8 w-8 p-0 rounded-lg hover:bg-muted/50 ${showSessionPanel ? 'bg-primary/20 text-primary' : ''}`}
+              className={`h-7 w-7 p-0 rounded-lg hover:bg-muted/50 ${showSessionPanel ? 'bg-primary/20 text-primary' : ''}`}
               onClick={() => setShowSessionPanel(!showSessionPanel)}
               title="Потоки"
             >
-              <Layers className="h-4 w-4" />
+              <Layers className="h-3.5 w-3.5" />
             </Button>
             
-            {/* Model & Balance */}
             <OperatorBalanceHeader 
               selectedModel={selectedModel}
               onModelChange={handleModelChange}
             />
             
-            {/* Developer Mode */}
-            <Button variant="ghost" size="sm" asChild className="h-8 w-8 p-0 rounded-lg hover:bg-muted/50" title="Developer Mode">
+            <Button variant="ghost" size="sm" asChild className="h-7 w-7 p-0 rounded-lg hover:bg-muted/50" title="Developer Mode">
               <Link to="/dashboard">
-                <Code2 className="h-4 w-4" />
+                <Code2 className="h-3.5 w-3.5" />
               </Link>
             </Button>
           </div>
         </div>
       </header>
 
-      {/* Stats Bar - glassmorphism */}
-      <div className="flex-shrink-0 glass-panel border-t-0 px-3 py-2 overflow-x-auto">
-        <div className="flex items-center gap-2 min-w-0">
-          {/* Quick Stats */}
-          <div className="flex items-center gap-2 flex-wrap">
-            {totalRunning > 0 && (
-              <div className="session-chip border-primary/30">
-                <div className="status-dot status-dot-primary" />
-                <span className="text-xs font-medium text-primary">{totalRunning} active</span>
-              </div>
-            )}
-            {totalQueued > 0 && (
-              <div className="session-chip">
-                <Clock className="w-3.5 h-3.5 text-muted-foreground" />
-                <span className="text-xs text-muted-foreground">{totalQueued} queued</span>
-              </div>
-            )}
-            <div className="session-chip border-success/20">
-              <CheckCircle2 className="w-3.5 h-3.5 text-success" />
-              <span className="text-xs text-success font-medium">{totalCompleted}</span>
-            </div>
-            {totalFailed > 0 && (
-              <div className="session-chip border-destructive/20">
-                <XCircle className="w-3.5 h-3.5 text-destructive" />
-                <span className="text-xs text-destructive">{totalFailed}</span>
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
-
       {/* Main Layout */}
       <div className="flex-1 flex min-h-0 overflow-hidden w-full">
-        {/* Session Panel (collapsible) */}
+        {/* Session Panel (collapsible) - hidden on small screens */}
         {showSessionPanel && (
-          <div className="w-72 glass-panel border-t-0 border-l-0 flex-shrink-0 flex flex-col overflow-hidden">
-            <div className="p-3 border-b border-border/30">
+          <div className="hidden sm:flex w-56 lg:w-72 glass-panel border-t-0 border-l-0 flex-shrink-0 flex-col overflow-hidden">
+            <div className="p-2 border-b border-border/30">
               <h3 className="text-xs font-semibold text-foreground">Активные потоки</h3>
             </div>
             <RunnersPanel />
