@@ -605,31 +605,111 @@ const Operator = () => {
     setLoadingScreenshots(prev => new Set(prev).add(sessionId));
     
     try {
-      // Fetch latest session data
-      const { data: session } = await supabase
-        .from('sessions')
-        .select('last_screenshot_url, current_url, profiles(name)')
-        .eq('id', sessionId)
-        .single();
-      
-      if (session?.last_screenshot_url) {
-        addMessage({
-          type: 'screenshot',
-          content: `Screenshot from ${session.profiles?.name || 'Worker'}`,
-          sessionId,
-          imageUrl: session.last_screenshot_url,
-        });
+      // First, request a new screenshot from the runner
+      const response = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/session-api/sessions/${sessionId}/screenshot`,
+        { method: 'POST', headers: { 'Content-Type': 'application/json' } }
+      );
+
+      if (response.ok) {
+        const data = await response.json();
+        
+        if (data.screenshot_url) {
+          // Screenshot immediately available
+          const { data: session } = await supabase
+            .from('sessions')
+            .select('profiles(name)')
+            .eq('id', sessionId)
+            .single();
+          
+          addMessage({
+            type: 'screenshot',
+            content: `Screenshot from ${session?.profiles?.name || 'Worker'}`,
+            sessionId,
+            imageUrl: data.screenshot_url,
+          });
+        } else if (data.status === 'requested') {
+          // Screenshot requested, poll for it
+          addMessage({
+            type: 'system',
+            content: 'Capturing screenshot...',
+            sessionId,
+          });
+          
+          // Poll for screenshot for up to 10 seconds
+          let attempts = 0;
+          const pollInterval = setInterval(async () => {
+            attempts++;
+            const { data: session } = await supabase
+              .from('sessions')
+              .select('last_screenshot_url, profiles(name)')
+              .eq('id', sessionId)
+              .single();
+            
+            if (session?.last_screenshot_url) {
+              clearInterval(pollInterval);
+              addMessage({
+                type: 'screenshot',
+                content: `Screenshot from ${session.profiles?.name || 'Worker'}`,
+                sessionId,
+                imageUrl: session.last_screenshot_url,
+              });
+              setLoadingScreenshots(prev => {
+                const next = new Set(prev);
+                next.delete(sessionId);
+                return next;
+              });
+            } else if (attempts >= 10) {
+              clearInterval(pollInterval);
+              addMessage({
+                type: 'system',
+                content: 'Screenshot capture timed out',
+                sessionId,
+              });
+              setLoadingScreenshots(prev => {
+                const next = new Set(prev);
+                next.delete(sessionId);
+                return next;
+              });
+            }
+          }, 1000);
+          
+          return; // Don't clear loading state yet
+        } else {
+          addMessage({
+            type: 'system',
+            content: 'No active session for screenshot',
+            sessionId,
+          });
+        }
       } else {
-        addMessage({
-          type: 'system',
-          content: `No screenshot available for this session yet`,
-          sessionId,
-        });
+        // Fallback: try to get existing screenshot
+        const { data: session } = await supabase
+          .from('sessions')
+          .select('last_screenshot_url, profiles(name)')
+          .eq('id', sessionId)
+          .single();
+        
+        if (session?.last_screenshot_url) {
+          addMessage({
+            type: 'screenshot',
+            content: `Screenshot from ${session.profiles?.name || 'Worker'}`,
+            sessionId,
+            imageUrl: session.last_screenshot_url,
+          });
+        } else {
+          addMessage({
+            type: 'system',
+            content: 'No screenshot available for this session',
+            sessionId,
+          });
+        }
       }
     } catch (error) {
+      console.error('Screenshot request error:', error);
       addMessage({
         type: 'error',
-        content: 'Failed to get screenshot',
+        content: 'Failed to capture screenshot',
         sessionId,
       });
     } finally {
