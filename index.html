@@ -1,8 +1,8 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" style="width:100%;max-width:100%;overflow-x:hidden;margin:0;padding:0;">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, viewport-fit=cover" />
     <title>Session Framework | Distributed Simulation Engine</title>
     <meta name="description" content="A framework for simulating and replaying user sessions for UX, load, and behavior research purposes." />
     <meta name="author" content="Session Framework" />
@@ -10,9 +10,19 @@
     <meta property="og:description" content="Simulate and replay user sessions for UX and behavior research." />
     <meta property="og:type" content="website" />
     <meta name="twitter:card" content="summary_large_image" />
+    <style>
+      html, body, #root {
+        width: 100% !important;
+        max-width: 100% !important;
+        overflow-x: hidden !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        box-sizing: border-box !important;
+      }
+    </style>
   </head>
-  <body class="dark">
-    <div id="root"></div>
+  <body class="dark" style="width:100%;max-width:100%;overflow-x:hidden;margin:0;padding:0;">
+    <div id="root" style="width:100%;max-width:100%;overflow-x:hidden;"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
