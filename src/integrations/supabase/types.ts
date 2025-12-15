@@ -67,6 +67,85 @@ export type Database = {
           },
         ]
       }
+      agents: {
+        Row: {
+          created_at: string
+          email: string
+          has_cookies: boolean | null
+          has_fingerprint: boolean | null
+          id: string
+          last_task_id: string | null
+          last_verified_at: string | null
+          metadata: Json | null
+          number: number
+          password_encrypted: string | null
+          profile_id: string | null
+          proxy_id: string | null
+          status: string
+          tasks_completed: number | null
+          updated_at: string
+          verification_error: string | null
+        }
+        Insert: {
+          created_at?: string
+          email: string
+          has_cookies?: boolean | null
+          has_fingerprint?: boolean | null
+          id?: string
+          last_task_id?: string | null
+          last_verified_at?: string | null
+          metadata?: Json | null
+          number?: number
+          password_encrypted?: string | null
+          profile_id?: string | null
+          proxy_id?: string | null
+          status?: string
+          tasks_completed?: number | null
+          updated_at?: string
+          verification_error?: string | null
+        }
+        Update: {
+          created_at?: string
+          email?: string
+          has_cookies?: boolean | null
+          has_fingerprint?: boolean | null
+          id?: string
+          last_task_id?: string | null
+          last_verified_at?: string | null
+          metadata?: Json | null
+          number?: number
+          password_encrypted?: string | null
+          profile_id?: string | null
+          proxy_id?: string | null
+          status?: string
+          tasks_completed?: number | null
+          updated_at?: string
+          verification_error?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "agents_last_task_id_fkey"
+            columns: ["last_task_id"]
+            isOneToOne: false
+            referencedRelation: "tasks"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "agents_profile_id_fkey"
+            columns: ["profile_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "agents_proxy_id_fkey"
+            columns: ["proxy_id"]
+            isOneToOne: false
+            referencedRelation: "proxies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       ai_model_cache: {
         Row: {
           capabilities: string[] | null

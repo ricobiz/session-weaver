@@ -24,6 +24,8 @@ import { OpenRouterBalance } from '@/components/OpenRouterBalance';
 import { RunnerStatus } from '@/components/RunnerStatus';
 import { RunnerTestPanel } from '@/components/RunnerTestPanel';
 import { SystemSetup } from '@/components/SystemSetup';
+import { AgentHub } from '@/components/agents';
+import { useAgents, useCreateAgents, useDeleteAgent, useStartSwarm } from '@/hooks/useAgents';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import {
@@ -67,7 +69,8 @@ import {
   Shield,
   Zap,
   Trash2,
-  Fingerprint
+  Fingerprint,
+  Bot
 } from 'lucide-react';
 import { Database } from '@/integrations/supabase/types';
 
@@ -80,6 +83,7 @@ const Index = () => {
   const { data: sessions = [], isLoading: sessionsLoading } = useSessions();
   const { data: runners = [] } = useRunnerHealth();
   const { data: tasks = [] } = useTasks();
+  const { data: agents = [], isLoading: agentsLoading } = useAgents();
 
   const createTaskMutation = useCreateTask();
   const startTaskMutation = useStartTask();
@@ -90,6 +94,10 @@ const Index = () => {
   const deleteProfileMutation = useDeleteProfile();
   const deleteSessionMutation = useDeleteSession();
   
+  const createAgentsMutation = useCreateAgents();
+  const deleteAgentMutation = useDeleteAgent();
+  const startSwarmMutation = useStartSwarm();
+  
   const [loadingTaskId, setLoadingTaskId] = useState<string | null>(null);
 
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
@@ -98,7 +106,7 @@ const Index = () => {
   const [selectedProfileId, setSelectedProfileId] = useState<string | null>(null);
   const [profileDialogOpen, setProfileDialogOpen] = useState(false);
   const [scenarioDialogOpen, setScenarioDialogOpen] = useState(false);
-  const [rightPanelView, setRightPanelView] = useState<'live' | 'logs' | 'timeline' | 'metrics' | 'ai' | 'settings' | 'setup' | 'profile'>('setup');
+  const [rightPanelView, setRightPanelView] = useState<'live' | 'logs' | 'timeline' | 'metrics' | 'ai' | 'settings' | 'setup' | 'profile' | 'agents'>('setup');
   const [aiModel, setAiModel] = useState(() => localStorage.getItem('ai_selected_model') || 'anthropic/claude-sonnet-4-5');
   const [showSetupModal, setShowSetupModal] = useState(false);
 
@@ -581,6 +589,15 @@ const Index = () => {
                 >
                   <Fingerprint className="w-3.5 h-3.5" />
                 </Button>
+                <Button
+                  size="sm"
+                  variant={rightPanelView === 'agents' ? 'default' : 'ghost'}
+                  onClick={() => setRightPanelView('agents')}
+                  className="h-7 px-2"
+                  title="Казарма агентов"
+                >
+                  <Bot className="w-3.5 h-3.5" />
+                </Button>
               </div>
             </div>
             
@@ -668,6 +685,25 @@ const Index = () => {
               <ProfileDetailPanel 
                 profile={selectedProfile}
                 onClose={() => setRightPanelView('setup')}
+              />
+            )}
+
+            {rightPanelView === 'agents' && (
+              <AgentHub
+                agents={agents}
+                onAgentCreate={async (credentials) => {
+                  await createAgentsMutation.mutateAsync(credentials);
+                }}
+                onAgentRun={(agentId) => {
+                  toast({ title: 'Запуск агента', description: 'Создание сессии...' });
+                }}
+                onAgentDelete={(agentId) => {
+                  deleteAgentMutation.mutate(agentId);
+                }}
+                onSwarmStart={(agentIds, task) => {
+                  startSwarmMutation.mutate({ agentIds, task });
+                }}
+                isLoading={agentsLoading}
               />
             )}
 
