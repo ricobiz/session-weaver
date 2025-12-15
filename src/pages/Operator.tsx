@@ -1075,18 +1075,12 @@ const Operator = () => {
                         className="flex items-center justify-between group"
                       >
                         <div className="flex items-center gap-2 flex-1 min-w-0">
-                          {/* Task status indicator with tooltip */}
+                          {/* Task status indicator */}
                           {statusColor && (
-                            <TooltipProvider>
-                              <Tooltip>
-                                <TooltipTrigger asChild>
-                                  <span className={`w-2 h-2 rounded-full ${statusColor} flex-shrink-0 cursor-help`} />
-                                </TooltipTrigger>
-                                <TooltipContent side="right" className="max-w-[200px]">
-                                  <p className="text-xs">{statusLabel}</p>
-                                </TooltipContent>
-                              </Tooltip>
-                            </TooltipProvider>
+                            <span 
+                              className={`w-2 h-2 rounded-full ${statusColor} flex-shrink-0`} 
+                              title={statusLabel || undefined}
+                            />
                           )}
                           <span className="truncate text-sm">{session.name}</span>
                           {session.id === activeSessionId && (
