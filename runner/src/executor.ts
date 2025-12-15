@@ -14,7 +14,7 @@ import {
   DEFAULT_RETRY_CONFIG 
 } from './retry';
 import { detectCaptcha, resolveCaptcha } from './captcha';
-import { generateFingerprint, getRandomPreset } from './stealth/fingerprint';
+import { generateFingerprint, getRandomPreset, getFingerprintScript, Fingerprint } from './stealth/fingerprint';
 import { AutonomousExecutor } from './autonomous';
 
 // Apply stealth plugin globally
@@ -466,7 +466,7 @@ export class SessionExecutor {
     const profile = session.profiles;
     const networkConfig = profile?.network_config;
     
-    // Generate fingerprint for anti-detection
+    // Generate consistent fingerprint for this session
     const fingerprint = generateFingerprint(getRandomPreset());
 
     const contextOptions: any = {
@@ -474,22 +474,26 @@ export class SessionExecutor {
       bypassCSP: true,
     };
 
-    // Apply viewport (from profile or fingerprint)
+    // Apply viewport - must match screen fingerprint exactly for consistency
     if (networkConfig?.viewport) {
       contextOptions.viewport = networkConfig.viewport;
+      contextOptions.screen = networkConfig.viewport;
     } else {
       contextOptions.viewport = { 
         width: fingerprint.screen.width, 
         height: fingerprint.screen.height 
       };
+      contextOptions.screen = {
+        width: fingerprint.screen.width,
+        height: fingerprint.screen.height
+      };
     }
 
-    // Apply user agent (use realistic one if not specified)
+    // Apply user agent from fingerprint for consistency
     if (networkConfig?.userAgent) {
       contextOptions.userAgent = networkConfig.userAgent;
     } else {
-      // Realistic Chrome user agent
-      contextOptions.userAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
+      contextOptions.userAgent = fingerprint.userAgent;
     }
 
     // Apply locale
@@ -523,8 +527,19 @@ export class SessionExecutor {
 
     const context = await browser.newContext(contextOptions);
 
-    // playwright-extra stealth plugin handles anti-detection automatically
-    // No need for manual CDP patches or applyStealthPatches
+    // Apply fingerprint consistency script via CDP
+    try {
+      const page = await context.newPage();
+      const cdpSession = await context.newCDPSession(page);
+      await cdpSession.send('Page.addScriptToEvaluateOnNewDocument', {
+        source: getFingerprintScript(fingerprint)
+      });
+      await cdpSession.detach();
+      await page.close();
+      globalLog('info', `Fingerprint applied: ${fingerprint.platform}, ${fingerprint.screen.width}x${fingerprint.screen.height}`);
+    } catch (cdpError) {
+      globalLog('debug', 'CDP session not available for fingerprint injection');
+    }
 
     return context;
   }
