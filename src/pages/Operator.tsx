@@ -916,10 +916,21 @@ const Operator = () => {
     }));
 
   return (
-    <div className="h-screen bg-background flex flex-col overflow-hidden p-1" style={{ width: '100%', boxSizing: 'border-box', border: '2px solid red' }}>
+    <div style={{ 
+      position: 'fixed',
+      top: 0,
+      left: 0,
+      right: 0,
+      bottom: 0,
+      display: 'flex',
+      flexDirection: 'column',
+      overflow: 'hidden',
+      background: 'hsl(var(--background))',
+      border: '3px solid red'
+    }}>
       {/* Minimal Header */}
-      <header className="flex-shrink-0 glass-panel border-x-0 border-t-0 px-2 py-1 w-full">
-        <div className="flex items-center justify-between w-full overflow-hidden">
+      <header className="flex-shrink-0 glass-panel border-x-0 border-t-0 px-2 py-1">
+        <div className="flex items-center justify-between overflow-hidden">
           {/* Left: Model + New Chat */}
           <div className="flex items-center gap-1.5 min-w-0">
             {/* Model selector - compact with text */}
