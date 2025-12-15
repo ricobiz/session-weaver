@@ -1,7 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { Wallet, RefreshCw, AlertTriangle } from 'lucide-react';
+import { RefreshCw } from 'lucide-react';
 import { ModelSelector } from './ModelSelector';
 
 interface BalanceData {
@@ -40,40 +38,39 @@ export function OperatorBalanceHeader({ selectedModel, onModelChange }: Operator
 
   useEffect(() => {
     fetchBalance();
-    const interval = setInterval(fetchBalance, 30000);
+    const interval = setInterval(fetchBalance, 60000); // Every minute
     return () => clearInterval(interval);
   }, [fetchBalance]);
 
   const remaining = balance?.balance ?? 0;
-  const isLow = remaining < 2;
+  const modelName = selectedModel.split('/').pop() || selectedModel;
 
   return (
     <div className="flex items-center gap-1">
-      {/* Model Selector */}
+      {/* Model Selector with model name shown */}
       <ModelSelector 
         value={selectedModel} 
         onChange={onModelChange} 
         compact 
       />
+      
+      {/* Model name text */}
+      <span className="text-[9px] text-muted-foreground truncate max-w-[60px] hidden sm:inline">
+        {modelName}
+      </span>
 
-      {/* Balance Display - minimal */}
+      {/* Balance - just number */}
       <a 
         href="https://openrouter.ai/credits"
         target="_blank"
         rel="noopener noreferrer"
-        className={`flex items-center gap-1 px-1.5 py-1 h-7 rounded text-[10px] font-medium transition-colors ${
-          isLow 
-            ? 'bg-destructive/10 text-destructive' 
-            : 'bg-muted/30 hover:bg-muted/50 text-muted-foreground'
-        }`}
-        title="Top up credits"
+        className="text-[9px] text-muted-foreground hover:text-foreground"
+        title="OpenRouter balance"
       >
         {isLoading ? (
-          <RefreshCw className="w-3 h-3 animate-spin" />
-        ) : balance ? (
-          <span>${remaining.toFixed(2)}</span>
+          <RefreshCw className="w-2.5 h-2.5 animate-spin" />
         ) : (
-          <span>--</span>
+          `$${remaining.toFixed(2)}`
         )}
       </a>
     </div>

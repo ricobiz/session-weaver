@@ -16,29 +16,22 @@ import {
   Clock,
   Activity,
   Sparkles,
-  WifiOff,
-  Server,
-  Image,
   User,
   ExternalLink,
   RotateCw,
-  Zap,
   Brain,
   Pause,
   Play,
   Trash2,
-  Copy,
   Plus,
-  MessageSquare,
-  ChevronDown,
   History,
-  Layers,
   Paperclip,
   X,
   File,
   FileImage,
   FileAudio,
   FileVideo,
+  ChevronDown,
 } from 'lucide-react';
 import { OperatorBalanceHeader } from '@/components/operator/OperatorBalanceHeader';
 import {
@@ -923,120 +916,87 @@ const Operator = () => {
     }));
 
   return (
-    <div className="h-screen w-full bg-background flex flex-col overflow-hidden box-border">
-      {/* Compact Header - all in one line */}
-      <header className="flex-shrink-0 glass-panel border-x-0 border-t-0 px-2 py-1.5">
-        <div className="flex items-center gap-1.5 w-full overflow-x-auto">
-          {/* Chat Sessions Dropdown */}
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="sm" className="h-7 px-2 gap-1 hover:bg-muted/50 rounded-lg flex-shrink-0">
-                <MessageSquare className="h-3.5 w-3.5 text-primary" />
-                <ChevronDown className="h-3 w-3 text-muted-foreground" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="start" className="w-64 glass-panel border-border/50">
-              <DropdownMenuItem onClick={() => createNewSession()} className="gap-2">
-                <Plus className="h-4 w-4 text-primary" />
-                <span>Новый чат</span>
-              </DropdownMenuItem>
-              {chatSessions.length > 0 && <DropdownMenuSeparator />}
-              {chatSessions.slice(0, 10).map(session => (
-                <DropdownMenuItem 
-                  key={session.id}
-                  onClick={() => switchSession(session.id)}
-                  className="flex items-center justify-between group"
-                >
-                  <div className="flex items-center gap-2 flex-1 min-w-0">
-                    <History className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground" />
-                    <span className="truncate text-sm">{session.name}</span>
-                    {session.id === activeSessionId && (
-                      <span className="w-1.5 h-1.5 rounded-full bg-primary" />
-                    )}
-                  </div>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-6 w-6 p-0 opacity-0 group-hover:opacity-100"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      deleteSession(session.id);
-                    }}
-                  >
-                    <Trash2 className="h-3.5 w-3.5 text-destructive" />
-                  </Button>
-                </DropdownMenuItem>
-              ))}
-            </DropdownMenuContent>
-          </DropdownMenu>
-
-          {/* Stats inline */}
-          <div className="flex items-center gap-1.5 flex-1 min-w-0">
-            {totalRunning > 0 && (
-              <div className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-primary/10 border border-primary/20">
-                <div className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
-                <span className="text-[10px] font-medium text-primary">{totalRunning}</span>
-              </div>
-            )}
-            {totalQueued > 0 && (
-              <div className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-muted/50 border border-border/30">
-                <Clock className="w-3 h-3 text-muted-foreground" />
-                <span className="text-[10px] text-muted-foreground">{totalQueued}</span>
-              </div>
-            )}
-            <div className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-success/10 border border-success/20">
-              <CheckCircle2 className="w-3 h-3 text-success" />
-              <span className="text-[10px] text-success font-medium">{totalCompleted}</span>
-            </div>
-            {totalFailed > 0 && (
-              <div className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-destructive/10 border border-destructive/20">
-                <XCircle className="w-3 h-3 text-destructive" />
-                <span className="text-[10px] text-destructive">{totalFailed}</span>
-              </div>
-            )}
-          </div>
-
-          {/* Right: Actions */}
-          <div className="flex items-center gap-1 flex-shrink-0">
-            {/* Status */}
-            <div className={`flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium ${
-              systemOnline ? 'bg-success/10 text-success' : 'bg-destructive/10 text-destructive'
-            }`}>
-              {systemOnline ? (
-                <>
-                  <span className="w-1.5 h-1.5 rounded-full bg-success animate-pulse" />
-                  <span>{onlineRunners.length}</span>
-                </>
-              ) : (
-                <WifiOff className="w-3 h-3" />
-              )}
-            </div>
-            
-            <Button 
-              variant="ghost" 
-              size="sm" 
-              className={`h-7 w-7 p-0 rounded-lg hover:bg-muted/50 ${showSessionPanel ? 'bg-primary/20 text-primary' : ''}`}
-              onClick={() => setShowSessionPanel(!showSessionPanel)}
-              title="Потоки"
-            >
-              <Layers className="h-3.5 w-3.5" />
-            </Button>
-            
+    <div className="h-screen w-full bg-background flex flex-col overflow-hidden box-border max-w-[100vw]">
+      {/* Minimal Header */}
+      <header className="flex-shrink-0 glass-panel border-x-0 border-t-0 px-2 py-1">
+        <div className="flex items-center justify-between w-full">
+          {/* Left: Model + New Chat */}
+          <div className="flex items-center gap-1.5 min-w-0">
+            {/* Model selector - compact with text */}
             <OperatorBalanceHeader 
               selectedModel={selectedModel}
               onModelChange={handleModelChange}
             />
             
+            {/* New Chat Button */}
+            <Button 
+              variant="outline" 
+              size="sm" 
+              onClick={() => createNewSession()}
+              className="h-7 px-2 rounded-lg border-primary/30 bg-primary/10 hover:bg-primary/20 text-primary text-[10px] font-medium"
+            >
+              <Plus className="h-3 w-3 mr-1" />
+              Чат
+            </Button>
+            
+            {/* Chat Sessions Dropdown */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="sm" className="h-7 w-7 p-0 hover:bg-muted/50 rounded-lg">
+                  <History className="h-3.5 w-3.5 text-muted-foreground" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start" className="w-64 bg-card border-border z-50">
+                {chatSessions.length === 0 ? (
+                  <div className="p-2 text-xs text-muted-foreground text-center">Нет истории</div>
+                ) : (
+                  chatSessions.slice(0, 10).map(session => (
+                    <DropdownMenuItem 
+                      key={session.id}
+                      onClick={() => switchSession(session.id)}
+                      className="flex items-center justify-between group"
+                    >
+                      <div className="flex items-center gap-2 flex-1 min-w-0">
+                        <span className="truncate text-sm">{session.name}</span>
+                        {session.id === activeSessionId && (
+                          <span className="w-1.5 h-1.5 rounded-full bg-primary" />
+                        )}
+                      </div>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-6 w-6 p-0 opacity-0 group-hover:opacity-100"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          deleteSession(session.id);
+                        }}
+                      >
+                        <Trash2 className="h-3.5 w-3.5 text-destructive" />
+                      </Button>
+                    </DropdownMenuItem>
+                  ))
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+
+          {/* Right: Status dot + Dev button */}
+          <div className="flex items-center gap-1.5">
+            {/* Status indicator - just a dot */}
+            <div 
+              className={`w-2 h-2 rounded-full ${systemOnline ? 'bg-success animate-pulse' : 'bg-destructive'}`}
+              title={systemOnline ? `Online (${onlineRunners.length} runners)` : 'Offline'}
+            />
+            
+            {/* Dev Mode */}
             <Button 
               variant="outline" 
               size="sm" 
               asChild 
               className="h-7 px-2 rounded-lg border-primary/30 bg-primary/10 hover:bg-primary/20 text-primary text-[10px] font-medium"
-              title="Developer Mode"
             >
               <Link to="/dashboard">
-                <Code2 className="h-3 w-3 mr-1" />
-                <span className="hidden sm:inline">Dev</span>
+                <Code2 className="h-3 w-3" />
               </Link>
             </Button>
           </div>
@@ -1044,7 +1004,7 @@ const Operator = () => {
       </header>
 
       {/* Main Layout */}
-      <div className="flex-1 flex min-h-0 overflow-hidden w-full">
+      <div className="flex-1 flex min-h-0 overflow-hidden w-full max-w-[100vw]">
         {/* Session Panel (collapsible) - hidden on small screens */}
         {showSessionPanel && (
           <div className="hidden sm:flex w-56 lg:w-72 glass-panel border-t-0 border-l-0 flex-shrink-0 flex-col overflow-hidden">
