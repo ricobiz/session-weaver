@@ -3,7 +3,7 @@ import { chromium } from 'playwright-extra';
 import { Browser, BrowserContext, Page } from 'playwright';
 import StealthPlugin from 'puppeteer-extra-plugin-stealth';
 import { log } from './logger';
-import { generateFingerprint, getRandomPreset } from './stealth/fingerprint';
+import { generateFingerprint, getRandomPreset, getFingerprintScript, Fingerprint } from './stealth/fingerprint';
 import { warmupBrowser, generateCookiesForDomain, saveBrowserState, loadBrowserState, BrowserState } from './stealth/warmup';
 import { 
   humanType, 
@@ -63,44 +63,81 @@ function addLog(message: string) {
   log('info', message);
 }
 
+// Store current fingerprint for the session
+let currentFingerprint: Fingerprint | null = null;
+
 async function ensureBrowser(): Promise<Page> {
   if (!testBrowser || !testBrowser.isConnected()) {
-    addLog('Launching browser with playwright-extra stealth...');
+    addLog('Launching browser with playwright-extra stealth + fingerprint consistency...');
     
-    // playwright-extra + stealth plugin handles all anti-detection automatically
+    // Generate consistent fingerprint for this session
+    currentFingerprint = generateFingerprint(getRandomPreset());
+    
+    // playwright-extra + stealth plugin handles base anti-detection
     testBrowser = await chromium.launch({
       headless: process.env.HEADLESS !== 'false',
       args: [
         '--disable-blink-features=AutomationControlled',
-        '--window-size=1920,1080',
+        `--window-size=${currentFingerprint.screen.width},${currentFingerprint.screen.height}`,
         '--start-maximized',
         '--no-first-run',
         '--no-default-browser-check',
         '--no-sandbox',
         '--disable-setuid-sandbox',
         '--disable-dev-shm-usage',
-        '--disable-gpu',
+        // Don't disable GPU for better WebGL consistency
+        '--disable-software-rasterizer',
       ],
       ignoreDefaultArgs: ['--enable-automation'],
     });
     
-    const fingerprint = generateFingerprint(getRandomPreset());
-    
     testContext = await testBrowser.newContext({
       bypassCSP: true,
-      viewport: { width: fingerprint.screen.width, height: fingerprint.screen.height },
-      userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      viewport: { 
+        width: currentFingerprint.screen.width, 
+        height: currentFingerprint.screen.height 
+      },
+      screen: {
+        width: currentFingerprint.screen.width,
+        height: currentFingerprint.screen.height
+      },
+      userAgent: currentFingerprint.userAgent,
       locale: 'en-US',
       timezoneId: 'America/New_York',
-      deviceScaleFactor: fingerprint.screen.pixelRatio,
+      deviceScaleFactor: currentFingerprint.screen.pixelRatio,
+      colorScheme: 'light',
     });
     
+    // Apply fingerprint consistency script via CDP
     testPage = await testContext.newPage();
-    addLog('Browser ready with stealth plugin');
+    
+    try {
+      const cdpSession = await testContext.newCDPSession(testPage);
+      await cdpSession.send('Page.addScriptToEvaluateOnNewDocument', {
+        source: getFingerprintScript(currentFingerprint)
+      });
+      await cdpSession.detach();
+      addLog('CDP fingerprint patches applied');
+    } catch (cdpError) {
+      addLog('CDP not available, fingerprint may be inconsistent');
+    }
+    
+    addLog(`Browser ready with fingerprint: ${currentFingerprint.platform}, ${currentFingerprint.screen.width}x${currentFingerprint.screen.height}`);
   }
   
   if (!testPage || testPage.isClosed()) {
     testPage = await testContext!.newPage();
+    
+    // Re-apply fingerprint script to new pages
+    if (currentFingerprint) {
+      try {
+        const cdpSession = await testContext!.newCDPSession(testPage);
+        await cdpSession.send('Page.addScriptToEvaluateOnNewDocument', {
+          source: getFingerprintScript(currentFingerprint)
+        });
+        await cdpSession.detach();
+      } catch (e) {}
+    }
   }
   
   return testPage;
