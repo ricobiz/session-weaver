@@ -925,8 +925,7 @@ const Operator = () => {
       display: 'flex',
       flexDirection: 'column',
       overflow: 'hidden',
-      background: 'hsl(var(--background))',
-      border: '3px solid red'
+      background: 'hsl(var(--background))'
     }}>
       {/* Minimal Header */}
       <header className="flex-shrink-0 glass-panel border-x-0 border-t-0 px-2 py-1">
