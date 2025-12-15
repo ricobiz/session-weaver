@@ -39,6 +39,18 @@ serve(async (req) => {
   console.log(`[runner-test] ${req.method} ${path}`);
 
   try {
+    // GET / - Root endpoint returns info
+    if (req.method === 'GET' && (path === '' || path === '/')) {
+      return new Response(JSON.stringify({ 
+        status: 'ok',
+        service: 'runner-test',
+        runner_url: RUNNER_API_URL,
+        endpoints: ['/health', '/logs', '/execute', '/test-scenario', '/test-typing', '/test-vision', '/test-human', '/autonomous']
+      }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
     // GET /health - Check runner status
     if (req.method === 'GET' && path === '/health') {
       const response = await fetch(`${RUNNER_API_URL}/health`, {
