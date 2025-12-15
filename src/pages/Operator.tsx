@@ -41,6 +41,12 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 import { TaskPlanner } from '@/components/TaskPlanner';
 import { TaskSupervisor } from '@/components/TaskSupervisor';
 import { ChatScreenshot } from '@/components/operator/ChatScreenshot';
@@ -1012,8 +1018,12 @@ const Operator = () => {
                     
                     // Status: yellow (running) > red (failed) > green (completed) > none
                     const statusColor = hasRunning ? 'bg-warning animate-pulse' : 
-                                       hasFailed ? 'bg-destructive' : 
+                                       hasFailed ? 'bg-destructive animate-pulse' : 
                                        allCompleted ? 'bg-success' : null;
+                    
+                    const statusLabel = hasRunning ? `В процессе (${chatTasks.filter(t => t.status === 'active').length} активных)` : 
+                                       hasFailed ? `Ошибка: ${chatTasks.find(t => t.sessionsFailed > 0)?.name || 'Задача прервана'}` : 
+                                       allCompleted ? `Завершено: ${chatTasks.length} задач` : null;
                     
                     return (
                       <DropdownMenuItem 
@@ -1022,9 +1032,18 @@ const Operator = () => {
                         className="flex items-center justify-between group"
                       >
                         <div className="flex items-center gap-2 flex-1 min-w-0">
-                          {/* Task status indicator */}
+                          {/* Task status indicator with tooltip */}
                           {statusColor && (
-                            <span className={`w-2 h-2 rounded-full ${statusColor} flex-shrink-0`} />
+                            <TooltipProvider>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <span className={`w-2 h-2 rounded-full ${statusColor} flex-shrink-0 cursor-help`} />
+                                </TooltipTrigger>
+                                <TooltipContent side="right" className="max-w-[200px]">
+                                  <p className="text-xs">{statusLabel}</p>
+                                </TooltipContent>
+                              </Tooltip>
+                            </TooltipProvider>
                           )}
                           <span className="truncate text-sm">{session.name}</span>
                           {session.id === activeSessionId && (
