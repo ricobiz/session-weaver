@@ -48,7 +48,7 @@ export function OperatorBalanceHeader({ selectedModel, onModelChange }: Operator
   const isLow = remaining < 2;
 
   return (
-    <div className="flex items-center gap-2">
+    <div className="flex items-center gap-1.5">
       {/* Model Selector */}
       <ModelSelector 
         value={selectedModel} 
@@ -56,23 +56,25 @@ export function OperatorBalanceHeader({ selectedModel, onModelChange }: Operator
         compact 
       />
 
-      {/* Balance Display - Clickable to OpenRouter */}
+      {/* Balance Display */}
       <a 
         href="https://openrouter.ai/credits"
         target="_blank"
         rel="noopener noreferrer"
-        className="flex items-center gap-1.5 px-2.5 py-1.5 h-8 rounded-xl bg-muted/30 hover:bg-muted/50 transition-colors cursor-pointer"
-        title="Top up OpenRouter credits"
+        className={`flex items-center gap-1.5 px-2 py-1.5 h-8 rounded-lg transition-colors ${
+          isLow 
+            ? 'bg-destructive/10 text-destructive border border-destructive/20' 
+            : 'bg-muted/30 hover:bg-muted/50 text-foreground'
+        }`}
+        title="Top up credits"
       >
         <Wallet className={`w-3.5 h-3.5 ${isLow ? 'text-destructive' : 'text-primary'}`} />
         {isLoading ? (
           <RefreshCw className="w-3 h-3 animate-spin text-muted-foreground" />
         ) : balance ? (
           <>
-            <span className={`text-xs font-medium ${isLow ? 'text-destructive' : 'text-foreground'}`}>
-              ${remaining.toFixed(2)}
-            </span>
-            {isLow && <AlertTriangle className="w-3 h-3 text-destructive" />}
+            <span className="text-xs font-medium">${remaining.toFixed(2)}</span>
+            {isLow && <AlertTriangle className="w-3 h-3" />}
           </>
         ) : (
           <span className="text-xs text-muted-foreground">--</span>

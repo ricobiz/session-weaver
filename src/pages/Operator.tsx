@@ -35,6 +35,12 @@ import {
   ChevronDown,
   History,
   Layers,
+  Paperclip,
+  X,
+  File,
+  FileImage,
+  FileAudio,
+  FileVideo,
 } from 'lucide-react';
 import { OperatorBalanceHeader } from '@/components/operator/OperatorBalanceHeader';
 import {
@@ -121,7 +127,9 @@ const Operator = () => {
   });
   const [loadingScreenshots, setLoadingScreenshots] = useState<Set<string>>(new Set());
   const [showSessionPanel, setShowSessionPanel] = useState(false);
+  const [attachedFiles, setAttachedFiles] = useState<File[]>([]);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const lastScreenshotRef = useRef<Map<string, string>>(new Map());
 
   // Chat sessions management
@@ -830,29 +838,55 @@ const Operator = () => {
     }
   };
 
+  // File handling
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+    if (files.length > 0) {
+      setAttachedFiles(prev => [...prev, ...files].slice(0, 10)); // Max 10 files
+    }
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  const removeFile = (index: number) => {
+    setAttachedFiles(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const getFileIcon = (file: File) => {
+    if (file.type.startsWith('image/')) return FileImage;
+    if (file.type.startsWith('audio/')) return FileAudio;
+    if (file.type.startsWith('video/')) return FileVideo;
+    return File;
+  };
+
+  const formatFileSize = (bytes: number) => {
+    if (bytes < 1024) return bytes + ' B';
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+    return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+  };
+
   return (
     <div className="h-screen bg-background flex flex-col overflow-hidden">
-      {/* Glassmorphism Header */}
-      <header className="flex-shrink-0 floating-header px-4 py-3">
-        <div className="flex items-center justify-between gap-3">
+      {/* Header */}
+      <header className="flex-shrink-0 glass-panel border-x-0 border-t-0 px-3 py-2">
+        <div className="flex items-center justify-between gap-2">
           {/* Left: Logo + Chat selector */}
-          <div className="flex items-center gap-3 min-w-0 flex-1">
-            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-primary via-primary/80 to-accent flex items-center justify-center flex-shrink-0 glow-primary">
+          <div className="flex items-center gap-2 min-w-0">
+            <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-primary via-primary/80 to-accent flex items-center justify-center flex-shrink-0">
               <Bot className="w-4 h-4 text-primary-foreground" />
             </div>
             
             {/* Chat Sessions Dropdown */}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="sm" className="h-8 px-3 gap-2 glass-card hover:border-primary/30">
-                  <MessageSquare className="h-3.5 w-3.5 text-primary" />
-                  <span className="text-sm font-medium truncate max-w-[100px]">
-                    {currentSession?.name || 'New Chat'}
+                <Button variant="ghost" size="sm" className="h-8 px-2 gap-1.5 hover:bg-muted/50 rounded-lg">
+                  <MessageSquare className="h-3.5 w-3.5 text-primary flex-shrink-0" />
+                  <span className="text-sm font-medium truncate max-w-[80px] hidden sm:inline">
+                    {currentSession?.name || 'Новый чат'}
                   </span>
-                  <ChevronDown className="h-3 w-3 text-muted-foreground" />
+                  <ChevronDown className="h-3 w-3 text-muted-foreground flex-shrink-0" />
                 </Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="start" className="w-64 glass-panel">
+              <DropdownMenuContent align="start" className="w-64 glass-panel border-border/50">
                 <DropdownMenuItem onClick={() => createNewSession()} className="gap-2">
                   <Plus className="h-4 w-4 text-primary" />
                   <span>Новый чат</span>
@@ -888,31 +922,33 @@ const Operator = () => {
             </DropdownMenu>
           </div>
           
-          {/* Right: Actions */}
-          <div className="flex items-center gap-3 flex-shrink-0">
-            {/* System Status */}
-            <div className="session-chip px-2.5 py-1.5">
+          {/* Right: Compact Actions */}
+          <div className="flex items-center gap-1.5 flex-shrink-0">
+            {/* Status Badge */}
+            <div className={`flex items-center gap-1.5 px-2 py-1 rounded-lg text-xs font-medium ${
+              systemOnline 
+                ? 'bg-success/10 text-success border border-success/20' 
+                : 'bg-destructive/10 text-destructive border border-destructive/20'
+            }`}>
               {systemOnline ? (
                 <>
-                  <div className="status-dot status-dot-success" />
-                  <span className="text-xs text-success font-medium">Online</span>
-                  <Separator orientation="vertical" className="h-3 bg-border/50 mx-1" />
-                  <Server className="w-3 h-3 text-muted-foreground" />
-                  <span className="text-xs text-muted-foreground">{onlineRunners.length}</span>
+                  <span className="w-1.5 h-1.5 rounded-full bg-success animate-pulse" />
+                  <span className="hidden sm:inline">Online</span>
+                  <span className="text-success/60">• {onlineRunners.length}</span>
                 </>
               ) : (
                 <>
-                  <WifiOff className="w-3.5 h-3.5 text-destructive" />
-                  <span className="text-xs text-destructive font-medium">Offline</span>
+                  <WifiOff className="w-3 h-3" />
+                  <span className="hidden sm:inline">Offline</span>
                 </>
               )}
             </div>
             
-            {/* Sessions Panel Toggle */}
+            {/* Icon Buttons */}
             <Button 
-              variant={showSessionPanel ? "secondary" : "ghost"} 
+              variant="ghost" 
               size="sm" 
-              className={`h-8 w-8 p-0 rounded-xl ${showSessionPanel ? 'bg-primary/20 text-primary' : ''}`}
+              className={`h-8 w-8 p-0 rounded-lg hover:bg-muted/50 ${showSessionPanel ? 'bg-primary/20 text-primary' : ''}`}
               onClick={() => setShowSessionPanel(!showSessionPanel)}
               title="Потоки"
             >
@@ -926,7 +962,7 @@ const Operator = () => {
             />
             
             {/* Developer Mode */}
-            <Button variant="ghost" size="sm" asChild className="h-8 w-8 p-0 rounded-xl hover:bg-accent/20 hover:text-accent" title="Developer Mode">
+            <Button variant="ghost" size="sm" asChild className="h-8 w-8 p-0 rounded-lg hover:bg-muted/50" title="Developer Mode">
               <Link to="/dashboard">
                 <Code2 className="h-4 w-4" />
               </Link>
@@ -1290,16 +1326,66 @@ const Operator = () => {
           </div>
         </ScrollArea>
 
-        {/* Input Area - glassmorphism */}
-        <div className="flex-shrink-0 glass-panel border-t-0 border-x-0 p-4">
-          <div className="max-w-3xl mx-auto">
-            <div className="flex items-end gap-3">
-              <div className="flex-1 glass-input rounded-2xl overflow-hidden">
+        {/* Input Area */}
+        <div className="flex-shrink-0 glass-panel border-t-0 border-x-0 p-3">
+          <div className="max-w-3xl mx-auto space-y-2">
+            {/* Attached Files Preview */}
+            {attachedFiles.length > 0 && (
+              <div className="flex flex-wrap gap-2 p-2 rounded-xl bg-muted/30 border border-border/50">
+                {attachedFiles.map((file, idx) => {
+                  const FileIcon = getFileIcon(file);
+                  return (
+                    <div 
+                      key={idx} 
+                      className="flex items-center gap-2 px-2 py-1.5 rounded-lg bg-background/50 border border-border/30 group"
+                    >
+                      <FileIcon className="w-4 h-4 text-primary flex-shrink-0" />
+                      <div className="min-w-0">
+                        <p className="text-xs font-medium truncate max-w-[120px]">{file.name}</p>
+                        <p className="text-[10px] text-muted-foreground">{formatFileSize(file.size)}</p>
+                      </div>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => removeFile(idx)}
+                        className="h-5 w-5 p-0 rounded-full opacity-60 hover:opacity-100 hover:bg-destructive/20 hover:text-destructive"
+                      >
+                        <X className="w-3 h-3" />
+                      </Button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+            
+            {/* Input Row */}
+            <div className="flex items-end gap-2">
+              {/* File Upload Button */}
+              <input
+                type="file"
+                ref={fileInputRef}
+                onChange={handleFileSelect}
+                multiple
+                className="hidden"
+                accept="*/*"
+              />
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => fileInputRef.current?.click()}
+                className="h-11 w-11 p-0 rounded-xl hover:bg-muted/50 flex-shrink-0"
+                title="Прикрепить файлы"
+              >
+                <Paperclip className="w-5 h-5 text-muted-foreground" />
+              </Button>
+              
+              {/* Text Input */}
+              <div className="flex-1 glass-input rounded-xl overflow-hidden">
                 <Textarea
                   value={command}
                   onChange={(e) => setCommand(e.target.value)}
                   placeholder="Опишите, что нужно сделать..."
-                  className="min-h-[48px] max-h-[150px] resize-none border-0 bg-transparent text-sm py-3 px-4 focus:ring-0 focus-visible:ring-0"
+                  className="min-h-[44px] max-h-[120px] resize-none border-0 bg-transparent text-sm py-3 px-4 focus:ring-0 focus-visible:ring-0"
                   disabled={isProcessing}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) handleSubmit();
@@ -1307,10 +1393,12 @@ const Operator = () => {
                   rows={1}
                 />
               </div>
+              
+              {/* Send Button */}
               <Button 
                 onClick={handleSubmit} 
-                disabled={isProcessing || !command.trim()}
-                className="h-12 w-12 rounded-2xl p-0 flex-shrink-0 btn-gradient"
+                disabled={isProcessing || (!command.trim() && attachedFiles.length === 0)}
+                className="h-11 w-11 rounded-xl p-0 flex-shrink-0 btn-gradient"
               >
                 {isProcessing ? (
                   <Loader2 className="w-5 h-5 animate-spin" />
@@ -1319,15 +1407,17 @@ const Operator = () => {
                 )}
               </Button>
             </div>
-            <div className="flex items-center justify-between mt-2 px-2">
-              <span className="text-xs text-muted-foreground/50">⌘+Enter чтобы отправить</span>
-              <div className="flex items-center gap-2">
+            
+            {/* Bottom Actions */}
+            <div className="flex items-center justify-between px-1">
+              <span className="text-[11px] text-muted-foreground/50">⌘+Enter • Перетащите файлы</span>
+              <div className="flex items-center gap-1">
                 {chatMessages.length > 0 && (
                   <Button
                     variant="ghost"
                     size="sm"
                     onClick={clearCurrentSession}
-                    className="h-6 text-xs text-muted-foreground/60 hover:text-destructive px-2 rounded-lg"
+                    className="h-6 text-[11px] text-muted-foreground/50 hover:text-destructive px-2 rounded-lg"
                   >
                     <Trash2 className="w-3 h-3 mr-1" />
                     Очистить
@@ -1337,7 +1427,7 @@ const Operator = () => {
                   variant="ghost"
                   size="sm"
                   onClick={() => { refetchTasks(); refetchSessions(); }}
-                  className="h-6 text-xs text-muted-foreground/60 hover:text-foreground px-2 rounded-lg"
+                  className="h-6 text-[11px] text-muted-foreground/50 hover:text-foreground px-2 rounded-lg"
                 >
                   <RotateCw className="w-3 h-3 mr-1" />
                   Обновить
