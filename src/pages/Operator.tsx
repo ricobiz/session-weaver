@@ -889,14 +889,16 @@ const Operator = () => {
           </div>
           
           {/* Right: Actions */}
-          <div className="flex items-center gap-2 flex-shrink-0">
+          <div className="flex items-center gap-3 flex-shrink-0">
             {/* System Status */}
-            <div className="session-chip">
+            <div className="session-chip px-2.5 py-1.5">
               {systemOnline ? (
                 <>
                   <div className="status-dot status-dot-success" />
                   <span className="text-xs text-success font-medium">Online</span>
-                  <span className="text-xs text-muted-foreground">• {onlineRunners.length}</span>
+                  <Separator orientation="vertical" className="h-3 bg-border/50 mx-1" />
+                  <Server className="w-3 h-3 text-muted-foreground" />
+                  <span className="text-xs text-muted-foreground">{onlineRunners.length}</span>
                 </>
               ) : (
                 <>
@@ -917,6 +919,7 @@ const Operator = () => {
               <Layers className="h-4 w-4" />
             </Button>
             
+            {/* Model & Balance */}
             <OperatorBalanceHeader 
               selectedModel={selectedModel}
               onModelChange={handleModelChange}
