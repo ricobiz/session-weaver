@@ -1,7 +1,8 @@
 import { createServer, IncomingMessage, ServerResponse } from 'http';
-import { chromium, Browser, BrowserContext, Page } from 'playwright';
+import { chromium } from 'playwright-extra';
+import { Browser, BrowserContext, Page } from 'playwright';
+import StealthPlugin from 'puppeteer-extra-plugin-stealth';
 import { log } from './logger';
-import { applyStealthPatches } from './stealth';
 import { generateFingerprint, getRandomPreset } from './stealth/fingerprint';
 import { warmupBrowser, generateCookiesForDomain, saveBrowserState, loadBrowserState, BrowserState } from './stealth/warmup';
 import { 
@@ -15,6 +16,9 @@ import {
   idleMouseMovement,
   randomDelay 
 } from './stealth/human-behavior';
+
+// Apply stealth plugin globally
+chromium.use(StealthPlugin());
 
 interface ExecuteRequest {
   action: 'screenshot' | 'navigate' | 'click' | 'dblclick' | 'type' | 'scroll' | 'drag' | 'mousemove' | 'keyboard' | 'idle' | 'evaluate' | 'warmup' | 'add-cookies' | 'get-cookies' | 'save-state' | 'load-state';
@@ -61,29 +65,13 @@ function addLog(message: string) {
 
 async function ensureBrowser(): Promise<Page> {
   if (!testBrowser || !testBrowser.isConnected()) {
-    addLog('Launching browser with full stealth mode...');
+    addLog('Launching browser with playwright-extra stealth...');
     
+    // playwright-extra + stealth plugin handles all anti-detection automatically
     testBrowser = await chromium.launch({
       headless: process.env.HEADLESS !== 'false',
       args: [
-        // === CRITICAL: Anti-detection flags ===
         '--disable-blink-features=AutomationControlled',
-        '--disable-infobars',
-        '--disable-automation',
-        '--disable-component-update',
-        '--disable-domain-reliability',
-        '--disable-background-networking',
-        '--disable-sync',
-        '--disable-translate',
-        '--disable-default-apps',
-        '--disable-extensions',
-        '--disable-component-extensions-with-background-pages',
-        '--disable-client-side-phishing-detection',
-        '--disable-background-timer-throttling',
-        '--disable-backgrounding-occluded-windows',
-        '--disable-renderer-backgrounding',
-        '--disable-features=TranslateUI,AutofillServerCommunication',
-        '--disable-ipc-flooding-protection',
         '--window-size=1920,1080',
         '--start-maximized',
         '--no-first-run',
@@ -92,130 +80,31 @@ async function ensureBrowser(): Promise<Page> {
         '--disable-setuid-sandbox',
         '--disable-dev-shm-usage',
         '--disable-gpu',
-        '--disable-software-rasterizer',
       ],
-      ignoreDefaultArgs: [
-        '--enable-automation',
-        '--enable-blink-features=IdleDetection',
-        '--export-tagged-pdf',
-      ],
+      ignoreDefaultArgs: ['--enable-automation'],
     });
     
     const fingerprint = generateFingerprint(getRandomPreset());
     
     testContext = await testBrowser.newContext({
       bypassCSP: true,
-      viewport: { width: 1920, height: 1080 },
+      viewport: { width: fingerprint.screen.width, height: fingerprint.screen.height },
       userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
       locale: 'en-US',
       timezoneId: 'America/New_York',
+      deviceScaleFactor: fingerprint.screen.pixelRatio,
     });
     
-    // === CDP: Remove webdriver flag BEFORE any page loads ===
-    try {
-      testPage = await testContext.newPage();
-      const cdpSession = await testContext.newCDPSession(testPage);
-      
-      await cdpSession.send('Page.addScriptToEvaluateOnNewDocument', {
-        source: `
-          // ========== WEBDRIVER REMOVAL (EARLIEST) ==========
-          Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
-          try { delete Navigator.prototype.webdriver; } catch(e) {}
-          Object.defineProperty(Navigator.prototype, 'webdriver', { get: () => undefined, configurable: true });
-          
-          // ========== PHANTOM PROPERTIES ==========
-          ['callPhantom', '_phantom', 'phantom', '__phantomas', 'Buffer', 'emit', 'spawn'].forEach(prop => {
-            try { delete window[prop]; } catch(e) {}
-            Object.defineProperty(window, prop, { get: () => undefined, set: () => {}, configurable: false });
-          });
-          
-          // ========== SELENIUM/DRIVER REMOVAL ==========
-          const seleniumProps = [
-            '__webdriver_script_fn', '__webdriver_script_func', '__webdriver_script_function',
-            '__driver_evaluate', '__webdriver_evaluate', '__selenium_evaluate', '__fxdriver_evaluate',
-            '__driver_unwrapped', '__webdriver_unwrapped', '__selenium_unwrapped', '__fxdriver_unwrapped',
-            'selenium', 'webdriver', 'driver', '_Selenium_IDE_Recorder', '_selenium', 'calledSelenium',
-            '__lastWatirAlert', '__lastWatirConfirm', '__lastWatirPrompt',
-            'domAutomation', 'domAutomationController'
-          ];
-          
-          seleniumProps.forEach(prop => {
-            try { delete window[prop]; } catch(e) {}
-            try { delete document[prop]; } catch(e) {}
-            try { Object.defineProperty(window, prop, { get: () => undefined, configurable: true }); } catch(e) {}
-            try { Object.defineProperty(document, prop, { get: () => undefined, configurable: true }); } catch(e) {}
-          });
-          
-          // ========== $cdc_ AND $chrome_ PATTERNS (Comprehensive) ==========
-          const cdcPattern = /^(\\$cdc_|\\$chrome_|\\$wdc_)/;
-          
-          // Clean document
-          Object.getOwnPropertyNames(document).filter(k => cdcPattern.test(k)).forEach(k => {
-            try { delete document[k]; } catch(e) {}
-          });
-          
-          // Clean window
-          Object.getOwnPropertyNames(window).filter(k => cdcPattern.test(k)).forEach(k => {
-            try { delete window[k]; } catch(e) {}
-          });
-          
-          // Proxy getOwnPropertyNames to hide $cdc_ forever
-          const origDocGetOwnPropertyNames = Object.getOwnPropertyNames;
-          Object.getOwnPropertyNames = function(obj) {
-            const names = origDocGetOwnPropertyNames.call(this, obj);
-            if (obj === document || obj === window) {
-              return names.filter(n => !cdcPattern.test(n));
-            }
-            return names;
-          };
-          
-          // ========== DOM ATTRIBUTE SCANNER EVASION ==========
-          // Sannysoft SELENIUM_DRIVER checks for specific DOM element attributes
-          const mutationObserver = new MutationObserver((mutations) => {
-            mutations.forEach(mutation => {
-              if (mutation.type === 'attributes') {
-                const attrName = mutation.attributeName || '';
-                if (/selenium|webdriver|driver|cdc_|wdc_/i.test(attrName)) {
-                  try { mutation.target.removeAttribute(attrName); } catch(e) {}
-                }
-              }
-            });
-          });
-          
-          // Start observing once DOM is ready
-          if (document.documentElement) {
-            mutationObserver.observe(document.documentElement, { attributes: true, subtree: true, childList: true });
-          } else {
-            document.addEventListener('DOMContentLoaded', () => {
-              mutationObserver.observe(document.documentElement, { attributes: true, subtree: true, childList: true });
-            });
-          }
-          
-          // ========== HOOK createElement to prevent injection ==========
-          const origCreateElement = document.createElement;
-          document.createElement = function(tagName, options) {
-            const el = origCreateElement.call(this, tagName, options);
-            // Override setAttribute to filter selenium attrs
-            const origSetAttribute = el.setAttribute;
-            el.setAttribute = function(name, value) {
-              if (/selenium|webdriver|driver|cdc_|wdc_/i.test(name)) return;
-              return origSetAttribute.call(this, name, value);
-            };
-            return el;
-          };
-        `
-      });
-      
-      await cdpSession.detach();
-      addLog('CDP stealth patches applied');
-    } catch (cdpError) {
-      addLog('CDP not available, using init script only');
-      testPage = await testContext.newPage();
-    }
-    
-    await applyStealthPatches(testContext, fingerprint);
-    addLog('Browser ready with full stealth');
+    testPage = await testContext.newPage();
+    addLog('Browser ready with stealth plugin');
   }
+  
+  if (!testPage || testPage.isClosed()) {
+    testPage = await testContext!.newPage();
+  }
+  
+  return testPage;
+}
   
   if (!testPage || testPage.isClosed()) {
     testPage = await testContext!.newPage();
