@@ -916,10 +916,10 @@ const Operator = () => {
     }));
 
   return (
-    <div className="h-screen bg-background flex flex-col overflow-hidden" style={{ width: 'calc(100vw - 10px)', marginRight: '10px', boxSizing: 'border-box', border: '2px solid red' }}>
+    <div className="h-screen bg-background flex flex-col overflow-hidden p-1" style={{ width: '100%', boxSizing: 'border-box', border: '2px solid red' }}>
       {/* Minimal Header */}
-      <header className="flex-shrink-0 glass-panel border-x-0 border-t-0 px-2 py-1 w-full" style={{ border: '2px solid lime' }}>
-        <div className="flex items-center justify-between w-full" style={{ overflow: 'hidden', border: '1px solid cyan' }}>
+      <header className="flex-shrink-0 glass-panel border-x-0 border-t-0 px-2 py-1 w-full">
+        <div className="flex items-center justify-between w-full overflow-hidden">
           {/* Left: Model + New Chat */}
           <div className="flex items-center gap-1.5 min-w-0">
             {/* Model selector - compact with text */}
@@ -1004,7 +1004,7 @@ const Operator = () => {
       </header>
 
       {/* Main Layout */}
-      <div className="flex-1 flex min-h-0 overflow-hidden" style={{ width: '100%', maxWidth: '100%', border: '2px solid yellow' }}>
+      <div className="flex-1 flex min-h-0 overflow-hidden w-full">
         {/* Session Panel (collapsible) - hidden on small screens */}
         {showSessionPanel && (
           <div className="hidden sm:flex w-56 lg:w-72 glass-panel border-t-0 border-l-0 flex-shrink-0 flex-col overflow-hidden">
@@ -1016,9 +1016,9 @@ const Operator = () => {
         )}
 
         {/* Chat Area */}
-        <div className="flex-1 flex flex-col min-h-0 min-w-0 overflow-hidden" style={{ border: '2px solid orange' }}>
+        <div className="flex-1 flex flex-col min-h-0 min-w-0 overflow-hidden">
           <ScrollArea className="flex-1 scrollbar-thin" ref={scrollRef}>
-            <div className="p-3 pr-5 sm:p-4 sm:pr-6 space-y-3 mx-auto" style={{ maxWidth: 'calc(100% - 12px)', width: '100%', border: '2px solid magenta' }}>
+            <div className="p-3 sm:p-4 space-y-3 w-full">
 
             {/* Active Tasks as glass cards */}
             {activeTasks.length > 0 && (
@@ -1308,8 +1308,8 @@ const Operator = () => {
         </ScrollArea>
 
         {/* Input Area */}
-        <div className="flex-shrink-0 glass-panel border-t-0 border-x-0 p-2 sm:p-3" style={{ width: '100%', maxWidth: '100%', border: '2px solid white' }}>
-          <div className="mx-auto space-y-2" style={{ width: '100%', maxWidth: '100%', overflow: 'hidden' }}>
+        <div className="flex-shrink-0 glass-panel border-t-0 border-x-0 p-2 sm:p-3 w-full">
+          <div className="space-y-2 w-full">
             {/* Attached Files Preview */}
             {attachedFiles.length > 0 && (
               <div className="flex flex-wrap gap-2 p-2 rounded-xl bg-muted/30 border border-border/50">
