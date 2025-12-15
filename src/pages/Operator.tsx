@@ -1018,7 +1018,7 @@ const Operator = () => {
         {/* Chat Area */}
         <div className="flex-1 flex flex-col min-h-0 min-w-0 overflow-hidden" style={{ border: '2px solid orange' }}>
           <ScrollArea className="flex-1 scrollbar-thin" ref={scrollRef}>
-            <div className="p-3 sm:p-4 space-y-3 mx-auto" style={{ maxWidth: '100%', width: '100%', border: '2px solid magenta' }}>
+            <div className="p-3 pr-5 sm:p-4 sm:pr-6 space-y-3 mx-auto" style={{ maxWidth: 'calc(100% - 12px)', width: '100%', border: '2px solid magenta' }}>
 
             {/* Active Tasks as glass cards */}
             {activeTasks.length > 0 && (
