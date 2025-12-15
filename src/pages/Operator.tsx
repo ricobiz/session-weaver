@@ -753,29 +753,28 @@ const Operator = () => {
   return (
     <div className="h-screen bg-background flex flex-col overflow-hidden">
       {/* Compact Header */}
-      <header className="flex-shrink-0 border-b border-border/40 bg-background/95 backdrop-blur-sm px-3 py-2">
-        <div className="flex items-center justify-between gap-2">
-          <div className="flex items-center gap-2">
-            <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-primary to-primary/60 flex items-center justify-center">
-              <Bot className="w-3.5 h-3.5 text-primary-foreground" />
+      <header className="flex-shrink-0 border-b border-border/40 bg-background/95 backdrop-blur-sm px-2 py-1.5">
+        <div className="flex items-center justify-between gap-1">
+          {/* Left: Logo + Chat selector */}
+          <div className="flex items-center gap-1.5 min-w-0 flex-1">
+            <div className="w-6 h-6 rounded-lg bg-gradient-to-br from-primary to-primary/60 flex items-center justify-center flex-shrink-0">
+              <Bot className="w-3 h-3 text-primary-foreground" />
             </div>
-            <span className="font-semibold text-sm">Operator</span>
             
-            {/* Chat Sessions Dropdown */}
+            {/* Chat Sessions Dropdown - compact */}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="sm" className="h-7 px-2 gap-1 text-muted-foreground">
-                  <MessageSquare className="h-3.5 w-3.5" />
-                  <span className="text-xs max-w-[100px] truncate">
-                    {currentSession?.name || 'New Chat'}
+                <Button variant="ghost" size="sm" className="h-6 px-1.5 gap-1 text-muted-foreground min-w-0">
+                  <span className="text-[11px] truncate max-w-[60px]">
+                    {currentSession?.name || 'Chat'}
                   </span>
-                  <ChevronDown className="h-3 w-3" />
+                  <ChevronDown className="h-2.5 w-2.5 flex-shrink-0" />
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="start" className="w-56">
                 <DropdownMenuItem onClick={() => createNewSession()}>
                   <Plus className="h-3.5 w-3.5 mr-2" />
-                  New Chat
+                  Новый чат
                 </DropdownMenuItem>
                 {chatSessions.length > 0 && <DropdownMenuSeparator />}
                 {chatSessions.slice(0, 10).map(session => (
@@ -808,26 +807,26 @@ const Operator = () => {
             </DropdownMenu>
           </div>
           
-          <div className="flex items-center gap-2">
+          {/* Right: Actions */}
+          <div className="flex items-center gap-1 flex-shrink-0">
             {/* Sessions Panel Toggle */}
             <Button 
               variant={showSessionPanel ? "secondary" : "ghost"} 
               size="sm" 
-              className="h-7 px-2 gap-1"
+              className="h-6 w-6 p-0"
               onClick={() => setShowSessionPanel(!showSessionPanel)}
+              title="Потоки"
             >
               <Layers className="h-3.5 w-3.5" />
-              {totalRunning > 0 && (
-                <span className="text-[10px] font-medium">{totalRunning}</span>
-              )}
             </Button>
             
             <OperatorBalanceHeader 
               selectedModel={selectedModel}
               onModelChange={handleModelChange}
             />
-            <Separator orientation="vertical" className="h-5" />
-            <Button variant="ghost" size="sm" asChild className="h-7 px-2 text-muted-foreground">
+            
+            {/* Developer Mode - всегда видна */}
+            <Button variant="ghost" size="sm" asChild className="h-6 w-6 p-0 text-muted-foreground" title="Developer Mode">
               <Link to="/dashboard">
                 <Code2 className="h-3.5 w-3.5" />
               </Link>
