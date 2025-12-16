@@ -912,6 +912,78 @@ const Operator = () => {
     }
   };
 
+  // View task result - get screenshot from session logs or session
+  const handleViewTaskResult = async (taskId: string) => {
+    try {
+      // First try to get screenshot from sessions
+      const { data: sessions } = await supabase
+        .from('sessions')
+        .select('id, last_screenshot_url, metadata, profiles(name)')
+        .eq('task_id', taskId)
+        .order('updated_at', { ascending: false });
+      
+      if (sessions && sessions.length > 0) {
+        const session = sessions[0];
+        
+        // Check for screenshot URL
+        if (session.last_screenshot_url) {
+          addMessage({
+            type: 'success',
+            content: `Результат выполнения задачи`,
+            taskId,
+            imageUrl: session.last_screenshot_url,
+          });
+          return;
+        }
+        
+        // Try to get screenshot from session logs
+        const { data: logs } = await supabase
+          .from('session_logs')
+          .select('details')
+          .eq('session_id', session.id)
+          .order('timestamp', { ascending: false })
+          .limit(10);
+        
+        const logWithScreenshot = logs?.find(log => {
+          const details = log.details as Record<string, unknown> | null;
+          return details?.screenshot_url;
+        });
+        
+        if (logWithScreenshot) {
+          const details = logWithScreenshot.details as Record<string, unknown>;
+          addMessage({
+            type: 'success',
+            content: `Результат выполнения задачи`,
+            taskId,
+            imageUrl: details.screenshot_url as string,
+          });
+          return;
+        }
+        
+        // No screenshot found - show metadata info
+        const metadata = session.metadata as Record<string, unknown> | null;
+        const reasoning = metadata?.reasoning as string | undefined;
+        
+        addMessage({
+          type: 'success',
+          content: reasoning 
+            ? `Задача завершена: ${reasoning}`
+            : `Задача выполнена, но скриншот недоступен. Раннер требует перезапуска.`,
+          taskId,
+        });
+      } else {
+        addMessage({
+          type: 'system',
+          content: 'Сессии для этой задачи не найдены',
+          taskId,
+        });
+      }
+    } catch (error) {
+      console.error('Failed to get task result:', error);
+      toast({ title: 'Не удалось получить результат', variant: 'destructive' });
+    }
+  };
+
   // Filter completed/cancelled tasks for history
   const completedTasks = allTasks.filter(t => 
     ['completed', 'cancelled', 'failed'].includes(t.status) || 
@@ -1296,6 +1368,19 @@ const Operator = () => {
                           
                           {/* Actions */}
                           <div className="flex items-center gap-1">
+                          {/* View Result Button for completed tasks */}
+                          {(task.status === 'completed' || task.progress === 100) && (
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => handleViewTaskResult(task.id)}
+                              className="h-7 px-2 rounded-lg hover:bg-primary/20 hover:text-primary text-xs"
+                              title="Посмотреть результат"
+                            >
+                              <ExternalLink className="w-3.5 h-3.5 mr-1" />
+                              Результат
+                            </Button>
+                          )}
                           <Button
                             size="sm"
                             variant="ghost"
