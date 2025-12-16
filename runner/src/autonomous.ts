@@ -167,6 +167,18 @@ export class AutonomousExecutor {
         if (!isBatch && agentResponse.action?.type === 'complete') {
           sessionLog('success', `Goal achieved: ${agentResponse.action.reason}`);
           
+          // Capture and upload final screenshot
+          const finalScreenshot = await this.captureScreenshot(page);
+          if (finalScreenshot) {
+            await this.api.uploadScreenshot(session.id, finalScreenshot, {
+              current_action: 'complete',
+              reasoning: agentResponse.action.reason || agentResponse.reasoning,
+              confidence: agentResponse.confidence,
+              goal_progress: 100,
+            });
+            sessionLog('debug', 'Final screenshot uploaded');
+          }
+          
           const avgVerificationScore = verifiedActions > 0 
             ? totalVerificationScore / verifiedActions 
             : 1;
@@ -234,6 +246,20 @@ export class AutonomousExecutor {
         const afterState = await this.captureState(page);
         const screenshotAfter = await this.captureScreenshot(page);
         const urlAfter = page.url();
+
+        // Upload screenshot to API for visibility in UI
+        if (screenshotAfter) {
+          const actionType = isBatch 
+            ? `batch[${actions.length}]` 
+            : (agentResponse.action?.type || 'unknown');
+          await this.api.uploadScreenshot(session.id, screenshotAfter, {
+            current_action: actionType,
+            reasoning: agentResponse.reasoning,
+            confidence: agentResponse.confidence,
+            goal_progress: agentResponse.goal_progress || 0,
+          });
+          sessionLog('debug', `Screenshot uploaded after ${actionType}`);
+        }
 
         // Verify batch if required
         if (agentResponse.requires_verification && this.config.verificationEnabled) {

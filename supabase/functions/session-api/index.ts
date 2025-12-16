@@ -965,16 +965,31 @@ serve(async (req) => {
         });
       }
 
-      // Update session with screenshot URL and clear request flag
+      // First get existing metadata to merge
+      const { data: existingSession } = await supabase
+        .from('sessions')
+        .select('metadata')
+        .eq('id', sessionId)
+        .single();
+
+      const existingMetadata = existingSession?.metadata || {};
+      const updatedMetadata = {
+        ...existingMetadata,
+        screenshot_requested: false,
+        screenshot_captured_at: new Date().toISOString(),
+        current_action: body.metadata?.current_action || body.current_action,
+        reasoning: body.metadata?.reasoning,
+        confidence: body.metadata?.confidence,
+        goal_progress: body.metadata?.goal_progress,
+      };
+
+      // Update session with screenshot URL and merged metadata
       const { error } = await supabase
         .from('sessions')
         .update({ 
           last_screenshot_url: finalUrl,
-          metadata: {
-            screenshot_requested: false,
-            screenshot_captured_at: new Date().toISOString(),
-            current_action: body.current_action,
-          }
+          metadata: updatedMetadata,
+          progress: body.metadata?.goal_progress || existingMetadata?.goal_progress || 0,
         })
         .eq('id', sessionId);
 
