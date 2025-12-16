@@ -211,4 +211,13 @@ export class ApiClient {
     const result = await this.request('PATCH', `/sessions/${sessionId}/profile-state`, { state });
     return result !== null;
   }
+
+  // Upload screenshot
+  async uploadScreenshot(sessionId: string, screenshotBase64: string, metadata?: Record<string, unknown>): Promise<boolean> {
+    const result = await this.request('PUT', `/sessions/${sessionId}/screenshot`, {
+      screenshot_base64: screenshotBase64,
+      metadata: metadata || {}
+    });
+    return result !== null;
+  }
 }
