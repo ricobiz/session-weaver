@@ -654,20 +654,45 @@ const Operator = () => {
       console.error('Failed to update task status:', e);
     }
 
-    // Get the last screenshot from task sessions
+    // Get session data and logs for result details
     let lastScreenshotUrl: string | null = null;
     let completedCount = 0;
     let failedCount = 0;
+    let resultDetails: string | null = null;
+    let finalUrl: string | null = null;
+    
     try {
       const { data: taskSessions } = await supabase
         .from('sessions')
-        .select('status, last_screenshot_url')
+        .select('id, status, last_screenshot_url, current_url, metadata')
         .eq('task_id', taskId);
       
       if (taskSessions) {
         completedCount = taskSessions.filter(s => s.status === 'success').length;
         failedCount = taskSessions.filter(s => s.status === 'error').length;
         lastScreenshotUrl = taskSessions.find(s => s.last_screenshot_url)?.last_screenshot_url || null;
+        
+        // Get the successful session to fetch logs
+        const successSession = taskSessions.find(s => s.status === 'success');
+        if (successSession) {
+          finalUrl = successSession.current_url;
+          
+          // Get the completion log with reasoning
+          const { data: logs } = await supabase
+            .from('session_logs')
+            .select('action, message, details')
+            .eq('session_id', successSession.id)
+            .eq('action', 'complete')
+            .order('timestamp', { ascending: false })
+            .limit(1);
+          
+          if (logs && logs.length > 0) {
+            const details = logs[0].details as Record<string, unknown> | null;
+            if (details?.reasoning) {
+              resultDetails = details.reasoning as string;
+            }
+          }
+        }
       }
     } catch (e) {
       console.error('Failed to fetch task sessions:', e);
@@ -685,7 +710,6 @@ const Operator = () => {
       );
       
       if (hasCompletionMessage) {
-        // Just remove supervisor, don't add another completion
         return { ...s, messages: s.messages.filter(m => m.type === 'supervisor' && m.taskId === taskId ? false : true) };
       }
       
@@ -700,9 +724,21 @@ const Operator = () => {
     );
     
     if (!alreadyHasCompletion) {
-      const resultContent = success 
+      // Build detailed result message
+      let resultContent = success 
         ? `✓ Задача выполнена! (${completedCount} успешно${failedCount > 0 ? `, ${failedCount} с ошибками` : ''})`
         : `✗ Задача завершена с ошибками (${completedCount} успешно, ${failedCount} неудачно)`;
+      
+      // Add details about what was done
+      if (resultDetails) {
+        resultContent += `\n\n📋 Результат: ${resultDetails}`;
+      }
+      if (finalUrl) {
+        resultContent += `\n\n🔗 Финальный URL: ${finalUrl}`;
+      }
+      if (!lastScreenshotUrl) {
+        resultContent += `\n\n⚠️ Скриншот недоступен (раннер требует обновления)`;
+      }
       
       addMessage({
         type: success ? 'success' : 'error',
